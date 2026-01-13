@@ -1,0 +1,68 @@
+#ifndef KZ_WS_H
+#define KZ_WS_H
+
+#include <parson/parson.h>
+#include <rigtorp/SPSCQueue.h>
+#include <ixwebsocket/IXNetSystem.h>
+#include <ixwebsocket/IXWebSocket.h>
+
+enum class WSState : int
+{
+    Uninitialized = 0,
+    Initialiazed,
+    Connected,
+    Disconnected,
+    DisconnectedButWorthRetrying,
+    _MAX,
+};
+
+enum class WSMessageType : int
+{
+    invalid = 0,
+    hello,
+    map_info,
+    client_info,
+    new_record,
+    _MAX,
+
+    // TODO
+    send_replay,
+};
+
+namespace kz {
+    using websocket = ix::WebSocket;
+    template <typename T> using queue = rigtorp::SPSCQueue<T>;
+};
+
+typedef void (*WSMessageFunc)(JSON_Object*);
+
+extern kz::websocket g_websocket;
+extern std::atomic<WSState> g_websocket_state;
+
+extern kz::queue<std::string> g_log_queue;
+extern kz::queue<std::string> g_outgoing_queue;
+extern kz::queue<JSON_Value*> g_incoming_queue;
+
+extern void kz_ws_init(std::thread::id t);
+extern void kz_ws_uninit(void);
+
+extern void kz_ws_start(std::string url, std::string token);
+extern void kz_ws_stop(void);
+
+extern void kz_ws_build_msg(WSMessageType type, JSON_Value* data_val, std::string& output, int64_t msg);
+extern void kz_ws_queue_msg(std::string& msg, int64_t msg_id);
+extern void kz_ws_send_msg(std::string& msg, int64_t msg_id);
+
+extern void kz_ws_run_tasks(int max_jobs_per_frame);
+extern void kz_ws_register(WSMessageType type, WSMessageFunc pfn);
+extern void kz_ws_event_map_change(void);
+extern void kz_ws_event_client_connect(edict_t* pEntity);
+
+extern void kz_ws_ack_invalid(JSON_Object* obj);
+extern void kz_ws_ack_hello(JSON_Object* obj);
+extern void kz_ws_ack_map_info(JSON_Object* obj);
+extern void kz_ws_ack_client_info(JSON_Object* obj);
+extern void kz_ws_ack_new_record(JSON_Object* obj);
+
+template <typename T> constexpr int ectoi(T ec) { return static_cast<int>(ec); }
+#endif

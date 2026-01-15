@@ -146,7 +146,7 @@ void kz_ws_ack_add_record(JSON_Object* obj)
     
     if (it != g_plugin_callbacks.end())
     {
-        std::vector<int>& plugin_data = it->second;
+        std::vector<int>& plugin_data = it->second.data;
         size_t size = plugin_data.size();
         int global_rec_id = json_object_dotget_number(obj, "data.rec_id");
 

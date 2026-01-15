@@ -5,13 +5,48 @@
 #include "kz_storage.h"
 #include "kz_natives.h"
 
+/* native kz_api_get_map_details(mapname[], handler[]); */
+static cell AMX_NATIVE_CALL kz_api_get_map_details(AMX* amx, cell* params)
+{
+    int num_params = (params[0] / sizeof(cell));
+    if (num_params < 2)
+    {
+        MF_LogError(amx, AMX_ERR_NATIVE, "Exepected at least 2 params, got %d", num_params);
+        return 0;
+    }
+
+    int len = 0;
+    char* mapname = MF_GetAmxString(amx, params[1], 0, &len);
+    char* handler = MF_GetAmxString(amx, params[2], 1, &len);
+
+    int fwd = MF_RegisterSPForwardByName(amx, handler, FP_STRING, FP_CELL, FP_CELL, FP_CELL, FP_DONE);
+    if (fwd == -1)
+    {
+        MF_LogError(amx, AMX_ERR_NATIVE, "Function is not present \"%s\"", handler);
+        return 0;
+    }
+
+    JSON_Value* data_val = json_value_init_object();
+    JSON_Object* data_obj = json_value_get_object(data_val);
+    json_object_set_string(data_obj, "mapname", mapname);
+
+    std::string message;
+    int64_t msg_id = kz_storage_get_next_id();
+
+    g_plugin_callbacks[msg_id] = { fwd, std::vector<int>() };
+
+    kz_ws_build_msg(WSMessageType::map_info, data_val, message, msg_id);
+    kz_ws_queue_msg(message, msg_id);
+    return 1;
+}
+
 /* native kz_api_add_record(id, Float:seconds, checkpoints, gochecks, KZWeapons:weapon, data[], dataSize); */
 static cell AMX_NATIVE_CALL kz_api_add_record(AMX* amx, cell* params)
 {
     int num_params = (params[0] / sizeof(cell));
     if (num_params < 5)
     {
-        MF_LogError(amx, AMX_ERR_NATIVE, "Expected atleast 5 params, got %d", num_params);
+        MF_LogError(amx, AMX_ERR_NATIVE, "Expected at least 5 params, got %d", num_params);
         return 0;
     }
 
@@ -61,7 +96,7 @@ static cell AMX_NATIVE_CALL kz_api_add_record(AMX* amx, cell* params)
     std::string message;
     int64_t msg_id = kz_storage_get_next_id();
 
-    g_plugin_callbacks[msg_id] = std::vector<int>();
+    g_plugin_callbacks[msg_id] = { -1, std::vector<int>() };
 
     if (num_params >= 7)
     {
@@ -69,7 +104,7 @@ static cell AMX_NATIVE_CALL kz_api_add_record(AMX* amx, cell* params)
         int size = params[7];
         if (ptr && size)
         {
-            g_plugin_callbacks[msg_id].assign(ptr, ptr + size);
+            g_plugin_callbacks[msg_id].data.assign(ptr, ptr + size);
         }
     }
     kz_ws_build_msg(WSMessageType::add_record, data_val, message, msg_id);
@@ -77,8 +112,8 @@ static cell AMX_NATIVE_CALL kz_api_add_record(AMX* amx, cell* params)
     return 1;
 }
 
-/* native kz_api_del_replay(global_record_id); */
-static cell AMX_NATIVE_CALL kz_api_del_replay(AMX* amx, cell* params)
+/* native kz_api_del_record(global_record_id); */
+static cell AMX_NATIVE_CALL kz_api_del_record(AMX* amx, cell* params)
 {
     return 0;
 }
@@ -110,7 +145,7 @@ int fwd_on_record_added = -1;
 int fwd_on_replay_uploaded = -1;
 int fwd_on_replay_downloaded = -1;
 
-std::map<int64_t, std::vector<int>> g_plugin_callbacks;
+std::map<int64_t, plugin_callback_data> g_plugin_callbacks;
 
 void kz_api_add_forwards(void)
 {

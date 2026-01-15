@@ -133,10 +133,11 @@ static cell AMX_NATIVE_CALL kz_api_get_replay(AMX* amx, cell* params)
 
 AMX_NATIVE_INFO kz_api_natives[] =
 {
-    {"kz_api_add_record", kz_api_add_record},
-    {"kz_api_del_record", kz_api_del_record},
-    {"kz_api_add_replay", kz_api_add_replay},
-    {"kz_api_get_replay", kz_api_get_replay},
+    {"kz_api_get_map_details",  kz_api_get_map_details},
+    {"kz_api_add_record",       kz_api_add_record},
+    {"kz_api_del_record",       kz_api_del_record},
+    {"kz_api_add_replay",       kz_api_add_replay},
+    {"kz_api_get_replay",       kz_api_get_replay},
     {NULL, NULL},
 };
 

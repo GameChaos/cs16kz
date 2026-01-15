@@ -64,17 +64,6 @@ enum KZWeapons
 };
 
 /**
- * Called when the current map's information is retrieved from the global database.
- *
- * @param type          The map category (from KZMap_Type enum)
- * @param length        The map length (from KZMap_Length enum)
- * @param difficulty    The map difficulty (from KZMap_Difficulty enum)
- *
- * @noreturn
- */
-forward kz_api_on_map_loaded(KZMap_Type:type, KZMap_Length:length, KZMap_Difficulty:difficulty);
-
-/**
  * Called when a record has been successfully added to the global database.
  *
  * @param global_rec_id The unique record ID assigned by the database
@@ -103,6 +92,19 @@ forward kz_api_on_replay_uploaded(global_rec_id);
  * @noreturn
  */
 forward kz_api_on_replay_downloaded(global_rec_id, filepath[]);
+
+/**
+ * Requests map details for a specific map.
+ *
+ * @note The handler function should follow this signature:
+ * public handler(mapname[], KZMap_Type:type, KZMap_Length:len, KZMap_Difficulty:diff);
+ *
+ * @param mapname       The name of the map to look up
+ * @param handler       The public callback function to receive the data
+ *
+ * @return              1 on success, 0 otherwise
+ */
+native kz_api_get_map_details(mapname[], handler[]);
 
 /**
  * Adds a new record to the global KZ database.

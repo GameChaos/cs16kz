@@ -59,7 +59,6 @@ extern void kz_ws_send_msg(std::string& msg, int64_t msg_id);
 
 extern void kz_ws_run_tasks(int max_jobs_per_frame);
 extern void kz_ws_register(WSMessageType type, WSMessageFunc pfn);
-extern void kz_ws_event_map_change(void);
 extern void kz_ws_event_client_connect(edict_t* pEntity);
 
 extern void kz_ws_ack_invalid(JSON_Object* obj);

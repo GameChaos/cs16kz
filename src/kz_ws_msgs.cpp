@@ -57,18 +57,6 @@ void kz_ws_register(WSMessageType type, WSMessageFunc pfn)
 {
     g_callback_table[ectoi(type)] = pfn;
 }
-void kz_ws_event_map_change(void)
-{
-    JSON_Value* data_val = json_value_init_object();
-    JSON_Object* data_obj = json_value_get_object(data_val);
-
-    std::string message;
-    int64_t msg_id = kz_storage_get_next_id();
-
-    json_object_set_string(data_obj, "mapname", STRING(gpGlobals->mapname));
-    kz_ws_build_msg(WSMessageType::map_info, data_val, message, msg_id);
-    kz_ws_queue_msg(message, msg_id);
-}
 void kz_ws_event_client_connect(edict_t* pEntity)
 {
     int id = indexOfEdict(pEntity);
@@ -103,11 +91,22 @@ void kz_ws_ack_hello(JSON_Object* obj)
 }
 void kz_ws_ack_map_info(JSON_Object* obj)
 {
-    int type = json_object_dotget_number(obj, "data.type");
-    int length = json_object_dotget_number(obj, "data.length");
-    int difficulty = json_object_dotget_number(obj, "data.difficulty");
+    const char* mapname = json_object_dotget_string(obj, "data.mapname");
+    int type            = json_object_dotget_number(obj, "data.type");
+    int length          = json_object_dotget_number(obj, "data.length");
+    int difficulty      = json_object_dotget_number(obj, "data.difficulty");
 
-    MF_ExecuteForward(fwd_on_map_loaded, type, length, difficulty);
+    int64_t msg_id = json_object_dotget_number(obj, "msg_id");
+    auto it = g_plugin_callbacks.find(msg_id);
+
+    if(it != g_plugin_callbacks.end())
+    {
+        MF_ExecuteForward(it->second.fwd, mapname, type, length, difficulty);
+    }
+    else
+    {
+        MF_Log("[kz_ws_ack_map_info] Failed to find %lld in g_plugin_callbacks", msg_id);
+    }
 }
 void kz_ws_ack_client_info(JSON_Object* obj)
 {

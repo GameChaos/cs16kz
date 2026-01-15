@@ -9,16 +9,11 @@
 #include "kz_storage.h"
 #include "kz_natives.h"
 
-bool g_initialiazed  = false;
-
 edict_t* g_pEdicts   = nullptr;
 cvar_t* kz_api_url   = nullptr;
 cvar_t* kz_api_token = nullptr;
 
-void RH_SV_ActivateServer(IRehldsHook_SV_ActivateServer* chain, int runPhysics);
 void RH_Cvar_DirectSet(IRehldsHook_Cvar_DirectSet* chain, cvar_t* var, const char* value);
-
-void KZ_SV_ActivateServer(void);
 void KZ_Cvar_DirectSet(const char* const varname, const char* const value);
 
 /***************************************************************************************************************/
@@ -31,7 +26,6 @@ void FN_AMXX_ATTACH()
 {
     if (RehldsApi_Init())
     {
-        RehldsHookchains->SV_ActivateServer()->registerHook(RH_SV_ActivateServer, HC_PRIORITY_UNINTERRUPTABLE);
         RehldsHookchains->Cvar_DirectSet()->registerHook(RH_Cvar_DirectSet, HC_PRIORITY_UNINTERRUPTABLE);
     }
 
@@ -75,7 +69,6 @@ void FN_StartFrame()
 void FN_ServerDeactivate_Post(void)
 {
     g_pEdicts = nullptr;
-    g_initialiazed = false;
     RETURN_META(MRES_IGNORED);
 }
 void FN_DispatchKeyValue(edict_t* pentKeyvalue, KeyValueData* pkvd)
@@ -90,11 +83,6 @@ int FN_DispatchSpawn(edict_t* pent)
 {
     if (FClassnameIs(pent, "worldspawn"))
     {
-        if(!g_rehlds_available && !g_initialiazed) // Why.. wHy... whY.... WhY... wHY... WHy... WHY... why...
-        {
-            g_initialiazed = true;
-            KZ_SV_ActivateServer();
-        }
         g_pEdicts = (*g_engfuncs.pfnPEntityOfEntIndex)(0);
     }
     RETURN_META_VALUE(MRES_IGNORED, FALSE);
@@ -138,11 +126,6 @@ BOOL FN_ClientConnect_Post(edict_t* pEntity, const char* pszName, const char* ps
 }
 /***************************************************************************************************************/
 /***************************************************************************************************************/
-void RH_SV_ActivateServer(IRehldsHook_SV_ActivateServer* chain, int runPhysics)
-{
-    chain->callNext(runPhysics);
-    KZ_SV_ActivateServer();
-}
 void RH_Cvar_DirectSet(IRehldsHook_Cvar_DirectSet* chain, cvar_t* var, const char* value)
 {
     chain->callNext(var, value);
@@ -150,10 +133,6 @@ void RH_Cvar_DirectSet(IRehldsHook_Cvar_DirectSet* chain, cvar_t* var, const cha
 }
 /***************************************************************************************************************/
 /***************************************************************************************************************/
-void KZ_SV_ActivateServer(void)
-{
-    kz_ws_event_map_change();
-}
 void KZ_Cvar_DirectSet(const char* const varname, const char* const value)
 {
     for (size_t i = 0; i < g_server_cvars_size; ++i)

@@ -128,6 +128,11 @@ BOOL FN_ClientConnect_Post(edict_t* pEntity, const char* pszName, const char* ps
 /***************************************************************************************************************/
 void RH_Cvar_DirectSet(IRehldsHook_Cvar_DirectSet* chain, cvar_t* var, const char* value)
 {
+    if (!var || !value || FStrEq(var->string, value))
+    {
+        chain->callNext(var, value);
+        return;
+    }
     chain->callNext(var, value);
     KZ_Cvar_DirectSet(var->name, value);
 }

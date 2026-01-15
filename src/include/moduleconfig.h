@@ -25,8 +25,12 @@
  * -For both library and library class, you can use a comma
  *   to add multiple entries.
  */
+
+#define MODULE_VERSION_MAJOR 0
+#define MODULE_VERSION_MINOR 1
+#define MODULE_VERSION "0.1.0"
+
 #define MODULE_NAME "[KZ] Global API"
-#define MODULE_VERSION "0.1.0-beta"
 #define MODULE_AUTHOR "fxr"
 #define MODULE_URL ""
 #define MODULE_LOGTAG "KZ Global"
@@ -82,7 +86,7 @@
 /** All plugins loaded
  * Do forward functions init here (MF_RegisterForward)
  */
-//#define FN_AMXX_PLUGINSLOADED OnPluginsLoaded
+#define FN_AMXX_PLUGINSLOADED OnPluginsLoaded
 
 /** All plugins are about to be unloaded */
 //#define FN_AMXX_PLUGINSUNLOADING OnPluginsUnloading

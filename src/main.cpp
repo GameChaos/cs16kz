@@ -5,8 +5,9 @@
 #include "kz_util.h"
 #include "kz_cvars.h"
 
-#include "kz_storage.h"
 #include "kz_ws.h"
+#include "kz_storage.h"
+#include "kz_natives.h"
 
 bool g_initialiazed  = false;
 
@@ -40,13 +41,22 @@ void FN_AMXX_ATTACH()
     kz_ws_register(WSMessageType::hello,       kz_ws_ack_hello);
     kz_ws_register(WSMessageType::map_info,    kz_ws_ack_map_info);
     kz_ws_register(WSMessageType::client_info, kz_ws_ack_client_info);
-    kz_ws_register(WSMessageType::new_record,  kz_ws_ack_new_record);
+    kz_ws_register(WSMessageType::add_record,  kz_ws_ack_add_record);
+    kz_ws_register(WSMessageType::del_record,  kz_ws_ack_del_record);
+    kz_ws_register(WSMessageType::add_replay,  kz_ws_ack_add_replay);
+    kz_ws_register(WSMessageType::get_replay,  kz_ws_ack_get_replay);
 
     kz_api_url      = UTIL_register_cvar("kz_api_url",  "", FCVAR_EXTDLL | FCVAR_PROTECTED | FCVAR_SPONLY);
     kz_api_token    = UTIL_register_cvar("kz_api_token","", FCVAR_EXTDLL | FCVAR_PROTECTED | FCVAR_SPONLY);
 
     kz_storage_init(MF_Log);
     kz_ws_init(std::this_thread::get_id());
+
+    kz_api_add_natives();
+}
+void FN_AMXX_PLUGINSLOADED()
+{
+    kz_api_add_forwards();
 }
 void FN_META_DETACH()
 {

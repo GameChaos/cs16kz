@@ -57,6 +57,7 @@ set(SOURCES
     src/kz_ws.cpp
     src/kz_ws_msgs.cpp
     src/kz_storage.cpp
+    src/kz_natives.cpp
     src/main.cpp
 )
 

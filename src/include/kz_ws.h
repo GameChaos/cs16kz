@@ -19,14 +19,18 @@ enum class WSState : int
 enum class WSMessageType : int
 {
     invalid = 0,
+
     hello,
     map_info,
     client_info,
-    new_record,
-    _MAX,
 
-    // TODO
-    send_replay,
+    add_record,
+    del_record,
+
+    add_replay,
+    get_replay,
+
+    _MAX,
 };
 
 namespace kz {
@@ -59,10 +63,16 @@ extern void kz_ws_event_map_change(void);
 extern void kz_ws_event_client_connect(edict_t* pEntity);
 
 extern void kz_ws_ack_invalid(JSON_Object* obj);
+
 extern void kz_ws_ack_hello(JSON_Object* obj);
 extern void kz_ws_ack_map_info(JSON_Object* obj);
 extern void kz_ws_ack_client_info(JSON_Object* obj);
-extern void kz_ws_ack_new_record(JSON_Object* obj);
+
+extern void kz_ws_ack_add_record(JSON_Object* obj);
+extern void kz_ws_ack_del_record(JSON_Object* obj);
+
+extern void kz_ws_ack_add_replay(JSON_Object* obj);
+extern void kz_ws_ack_get_replay(JSON_Object* obj);
 
 template <typename T> constexpr int ectoi(T ec) { return static_cast<int>(ec); }
 #endif

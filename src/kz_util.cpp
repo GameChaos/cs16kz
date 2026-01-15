@@ -5,13 +5,14 @@
 
 void UTIL_split_net_address(const char* addr, char* ip, size_t ip_maxlen, char* port, size_t port_maxlen)
 {
-    char* ptr;
+    const char* ptr;
     if(!port || !port_maxlen)
     {
+        char* ncptr;
         snprintf(ip, ip_maxlen, "%s", addr);
-        if((ptr = strstr(ip, ":")) != nullptr)
+        if((ncptr = strstr(ip, ":")) != nullptr)
         {
-            *ptr = '\0';
+            *ncptr = '\0';
         }
         return;
     }
@@ -48,9 +49,9 @@ edict_t* UTIL_find_player_by_authid(const char* authid)
 cvar_t* UTIL_register_cvar(const char* name, const char* value, int flags)
 {
     cvar_t reg_helper;
-    reg_helper.name = name;
-    reg_helper.string = value;
-    reg_helper.flags = flags;
+    reg_helper.name     = const_cast<char*>(name); // makes the compiler fucking happy
+    reg_helper.string   = const_cast<char*>(value);
+    reg_helper.flags    = flags;
 
     CVAR_REGISTER(&reg_helper);
     return CVAR_GET_POINTER(name);

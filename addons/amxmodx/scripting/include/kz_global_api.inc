@@ -3,65 +3,8 @@
 #endif
 #define _kz_global_api_included
 
-#define KZ_GLOBAL_API_VERSION_MAJOR 0
-#define KZ_GLOBAL_API_VERSION_MINOR 1
-
-/**
- * Map types
- */
-enum KZMap_Type
-{
-	KZM_BHOP,
-	KZM_CLIMB,
-	KZM_SLIDE,
-	KZM_MIX,
-	KZM_SPECIAL,
-};
-
-/**
- * Map length
- */
-enum KZMap_Length
-{
-	KZM_VERY_SHORT = 0,
-	KZM_SHORT,
-	KZM_MIDDLE,
-	KZM_LONG,
-	KZM_VERY_LONG,
-};
-
-/**
- * Map difficulty
- */
-enum KZMap_Difficulty
-{
-	KZM_BEGINNER = 0,
-	KZM_EASY,
-	KZM_EASY_MEDIUM,
-	KZM_MEDIUM,
-	KZM_MEDIUM_HARD,
-	KZM_HARD,
-	KZM_HARD_EXTREME,
-	KZM_EXTREME,
-	KZM_EXTREME_DEATH,
-	KZM_DEATH,
-};
-
-/**
- * Weapons enum for the KZ API.
- */
-enum KZWeapons
-{
-	KZW_AWP = 0,
-	KZW_M249,
-	KZW_AK47,
-	KZW_M4A1,
-	KZW_SG552,
-	KZW_FAMAS,
-	KZW_P90,
-	KZW_USP,
-	KZW_SCOUT,	
-};
+#include <kz_global_api_stocks>
+#include <kz_global_api_version>
 
 /**
  * Called when a record has been successfully added to the global database.

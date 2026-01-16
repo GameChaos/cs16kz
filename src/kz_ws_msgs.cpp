@@ -92,16 +92,19 @@ void kz_ws_ack_hello(JSON_Object* obj)
 void kz_ws_ack_map_info(JSON_Object* obj)
 {
     const char* mapname = json_object_dotget_string(obj, "data.mapname");
-    int type            = json_object_dotget_number(obj, "data.type");
-    int length          = json_object_dotget_number(obj, "data.length");
-    int difficulty      = json_object_dotget_number(obj, "data.difficulty");
+    const char* wr      = json_object_dotget_string(obj, "data.wr_txt");
+
+    int map_props[3];
+    map_props[0]    = json_object_dotget_number(obj, "data.type");
+    map_props[1]    = json_object_dotget_number(obj, "data.length");
+    map_props[2]    = json_object_dotget_number(obj, "data.difficulty");
 
     int64_t msg_id = json_object_dotget_number(obj, "msg_id");
     auto it = g_plugin_callbacks.find(msg_id);
 
     if(it != g_plugin_callbacks.end())
     {
-        MF_ExecuteForward(it->second.fwd, mapname, type, length, difficulty);
+        MF_ExecuteForward(it->second.fwd, mapname, wr, MF_PrepareCellArray(map_props, sizeof(map_props));
         MF_UnregisterSPForward(it->second.fwd);
     }
     else

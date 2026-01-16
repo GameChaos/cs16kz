@@ -141,7 +141,6 @@ AMX_NATIVE_INFO kz_api_natives[] =
     {NULL, NULL},
 };
 
-int fwd_on_map_loaded = -1;
 int fwd_on_record_added = -1;
 int fwd_on_replay_uploaded = -1;
 int fwd_on_replay_downloaded = -1;
@@ -153,7 +152,6 @@ void kz_api_add_forwards(void)
     int fwd = MF_RegisterForward("__kz_global_api_version_check", ET_IGNORE, FP_CELL, FP_CELL, FP_DONE);
     MF_ExecuteForward(fwd, MODULE_VERSION_MAJOR, MODULE_VERSION_MINOR);
 
-    fwd_on_map_loaded        = MF_RegisterForward("kz_api_on_map_loaded", ET_IGNORE, FP_CELL, FP_CELL, FP_CELL, FP_DONE);
     fwd_on_record_added      = MF_RegisterForward("kz_api_on_record_added", ET_IGNORE, FP_CELL, FP_ARRAY, FP_CELL, FP_DONE);
     fwd_on_replay_uploaded   = MF_RegisterForward("kz_api_on_replay_uploaded", ET_IGNORE, FP_CELL, FP_DONE);
     fwd_on_replay_downloaded = MF_RegisterForward("kz_api_on_replay_downloaded", ET_IGNORE, FP_CELL, FP_STRING, FP_DONE);

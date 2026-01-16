@@ -3,7 +3,6 @@
 
 typedef struct { int fwd; std::vector<int> data; } plugin_callback_data;
 
-extern int fwd_on_map_loaded;
 extern int fwd_on_record_added;
 extern int fwd_on_replay_uploaded;
 extern int fwd_on_replay_downloaded;

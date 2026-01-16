@@ -104,7 +104,7 @@ void kz_ws_ack_map_info(JSON_Object* obj)
 
     if(it != g_plugin_callbacks.end())
     {
-        MF_ExecuteForward(it->second.fwd, mapname, wr, MF_PrepareCellArray(map_props, sizeof(map_props));
+        MF_ExecuteForward(it->second.fwd, mapname, wr, MF_PrepareCellArray(map_props, sizeof(map_props)));
         MF_UnregisterSPForward(it->second.fwd);
     }
     else

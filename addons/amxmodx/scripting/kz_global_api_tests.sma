@@ -63,5 +63,5 @@ public map_details_handler(mapname[], wr[], map_props[3])
 	kz_api_get_map_length(map_props[1], szLength, charsmax(szLength));
 	kz_api_get_map_difficulty(map_props[2], szDifficulty, charsmax(szDifficulty));
 
-	server_print("[AMXX] Received details for map (%s): [type: %d][length: %d][diff: %s] - [%s][%s][%s]", mapname, type, length, diff, szType, szLength, szDifficulty);
+	server_print("[AMXX] Received details for map (%s): [type: %d][length: %d][diff: %d] - [%s][%s][%s]", mapname, map_props[0], map_props[1], map_props[2], szType, szLength, szDifficulty);
 }

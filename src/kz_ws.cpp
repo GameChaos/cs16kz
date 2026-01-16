@@ -14,6 +14,9 @@ kz::queue<std::string> g_log_queue(64);
 kz::queue<std::string> g_outgoing_queue(64);
 kz::queue<JSON_Value*> g_incoming_queue(64);
 
+extern cvar_t* kz_api_log_send;
+extern cvar_t* kz_api_log_recv;
+
 static inline void __ws_log__(const char* msg, ...)
 {
     char buffer[256];
@@ -48,7 +51,10 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
         case ix::WebSocketMessageType::Message:
         {
             const char* c_data = msg->str.c_str();
-            __ws_log__("[WS] Received message: %s", c_data);
+            if(kz_api_log_recv->value > 0.0f)
+            {
+                __ws_log__("[WS] Received message: %s", c_data);
+            }
 
             JSON_Value* root_val = json_parse_string(c_data);
             if(!root_val)
@@ -91,12 +97,12 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
         }
         case ix::WebSocketMessageType::Close:
         {
+            kz_storage_uninit();
             __ws_log__("[WS] Connection closed (%d): %s", msg->closeInfo.code, msg->closeInfo.reason.c_str());
             switch(msg->closeInfo.code)
             {
                 default:
                 {
-                    kz_storage_uninit();
                     g_websocket_state.store(WSState::Disconnected);
                     break;
                 }
@@ -105,12 +111,13 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
         }
         case ix::WebSocketMessageType::Error:
         {
+            kz_storage_uninit();
             __ws_log__("[WS] Error occured (%d): %s", msg->errorInfo.http_status, msg->errorInfo.reason.c_str());
             switch(msg->errorInfo.http_status)
             {
                 case 401: // Unauthorized
+                case 403: // Forbidden
                 {
-                    kz_storage_uninit();
                     g_websocket.disableAutomaticReconnection();
                     g_websocket_state.store(WSState::Disconnected);
                     break;
@@ -119,7 +126,6 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
                 case 500: // Internal Server Error aka gLp fucked up.
                 case 502: // Bad gateway
                 {
-                    kz_storage_uninit();
                     g_websocket.setMinWaitBetweenReconnectionRetries(10000);
                     g_websocket.setMaxWaitBetweenReconnectionRetries(30000);
                     g_websocket_state.store(WSState::DisconnectedButWorthRetrying);
@@ -127,7 +133,6 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
                 }
                 default:
                 {
-                    kz_storage_uninit();
                     g_websocket_state.store(WSState::DisconnectedButWorthRetrying);
                     break;
                 }
@@ -236,16 +241,9 @@ void kz_ws_send_msg(std::string& msg, int64_t msg_id)
     ix::WebSocketSendInfo result = g_websocket.sendUtf8Text(msg);
     if (!result.success)
     {
-        if(msg_id)
-        {
-            __ws_log__("[WS] Failed to send message [sid: %lld]: %s", msg_id, msg.c_str());
-        }
-        else
-        {
-            __ws_log__("[WS] Failed to send message: %s", msg.c_str());
-        }
+        __ws_log__("[WS] Failed to send message [sid: %lld]: %s", msg_id, msg.c_str());
     }
-    else
+    else if(kz_api_log_send->value > 0.0f)
     {
         __ws_log__("[WS] Sending message: %s", msg.c_str());
     }

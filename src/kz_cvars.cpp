@@ -41,6 +41,8 @@ const pr_cvar_t g_player_cvars[] = {
 const size_t g_player_cvars_size = (sizeof(g_player_cvars) / sizeof(pr_cvar_t));
 static_assert(g_player_cvars_size <= 64, "???? How many cvars did you there ???");
 
+char g_prev_api_url[64];
+char g_prev_api_token[64];
 float g_last_query_time[33];
 
 void kz_run_cvar_checker(void)
@@ -54,7 +56,7 @@ void kz_run_cvar_checker(void)
                 g_server_cvars[i].ptr = CVAR_GET_POINTER(g_server_cvars[i].name);
                 if(g_server_cvars[i].ptr == nullptr)
                 {
-                    // Too early.. cvars are not register yet.
+                    // Too early.. cvars are not registered yet.
                     break;
                 }
             }
@@ -62,6 +64,21 @@ void kz_run_cvar_checker(void)
             {
                MF_Log("Illegal cvar value: %s %s", g_server_cvars[i].name, g_server_cvars[i].ptr->string);
                CVAR_SET_STRING(g_server_cvars[i].name, g_server_cvars[i].expected_value);
+            }
+        }
+        if(kz_api_url->string && kz_api_token->string && kz_api_url->string[0] && kz_api_token->string[0])
+        {
+            if(!FStrEq(g_prev_api_url, kz_api_url->string) || !FStrEq(g_prev_api_token, kz_api_token->string))
+            {
+                if(g_websocket_state.load() > WSState::Uninitialized)
+                {
+                    MF_Log("[WS] API settings change detected. Reconnecting...");
+                    kz_ws_stop();
+                }
+                kz_ws_start(kz_api_url->string, kz_api_token->string);
+
+                snprintf(g_prev_api_url, sizeof(g_prev_api_url), "%s", kz_api_url->string);
+                snprintf(g_prev_api_token, sizeof(g_prev_api_token), "%s", kz_api_token->string);
             }
         }
     }

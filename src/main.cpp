@@ -13,6 +13,9 @@ edict_t* g_pEdicts   = nullptr;
 cvar_t* kz_api_url   = nullptr;
 cvar_t* kz_api_token = nullptr;
 
+cvar_t* kz_api_log_send = nullptr;
+cvar_t* kz_api_log_recv = nullptr;
+
 void RH_Cvar_DirectSet(IRehldsHook_Cvar_DirectSet* chain, cvar_t* var, const char* value);
 void KZ_Cvar_DirectSet(const char* const varname, const char* const value);
 
@@ -42,6 +45,9 @@ void FN_AMXX_ATTACH()
 
     kz_api_url      = UTIL_register_cvar("kz_api_url",  "", FCVAR_EXTDLL | FCVAR_PROTECTED | FCVAR_SPONLY);
     kz_api_token    = UTIL_register_cvar("kz_api_token","", FCVAR_EXTDLL | FCVAR_PROTECTED | FCVAR_SPONLY);
+
+    kz_api_log_send = UTIL_register_cvar("kz_api_log_send", "0", FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_log_recv = UTIL_register_cvar("kz_api_log_recv", "0", FCVAR_EXTDLL | FCVAR_SPONLY);
 
     kz_storage_init(MF_Log);
     kz_ws_init(std::this_thread::get_id());
@@ -97,6 +103,10 @@ void FN_CvarValue2(const edict_t* pEdict, int requestId, const char* cvar, const
 /* Maybe it works on amxmodx <= 1.8.2 (not tested) */
 void FN_Cvar_DirectSet_Post(struct cvar_s *var, char *value) 
 {
+    if(!var || !value || FStrEq(var->string, value))
+    {
+        RETURN_META(MRES_IGNORED);
+    }
     if(!g_rehlds_available)
     {
         KZ_Cvar_DirectSet(var->name, value);

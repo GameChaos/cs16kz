@@ -8,6 +8,9 @@ typedef struct pr_cvar_s // Protected cvar
     mutable cvar_t* ptr;
 } pr_cvar_t;
 
+extern cvar_t* kz_api_url;
+extern cvar_t* kz_api_token;
+
 extern const pr_cvar_t g_server_cvars[];
 extern const size_t g_server_cvars_size;
 

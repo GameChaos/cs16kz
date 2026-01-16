@@ -40,7 +40,12 @@ forward kz_api_on_replay_downloaded(global_rec_id, filepath[]);
  * Requests map details for a specific map.
  *
  * @note The handler function should follow this signature:
- * public handler(mapname[], KZMap_Type:type, KZMap_Length:len, KZMap_Difficulty:diff);
+ * public handler(mapname[], wr[], map_props[3]);
+ *
+ * @note map_props[3] layout:
+ * [0] = map type       (KZM_BHOP - KZM_SPECIAL)
+ * [1] = map length     (KZM_VERY_SHORT - KZM_VERY_LONG)
+ * [2] = map difficulty (KZM_BEGINNER - KZM_DEATH)
  *
  * @param mapname       The name of the map to look up
  * @param handler       The public callback function to receive the data

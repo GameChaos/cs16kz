@@ -55,13 +55,13 @@ public test_add_record(id)
 	kz_api_add_record(id, random_float(0.1, 99999.0), random_num(0, 99999), random_num(0, 99999), KZWeapons:random_num(_:KZW_AWP, _:KZW_SCOUT), var[second], strlen(var[second]));
 	kz_api_add_record(id, random_float(0.1, 99999.0), random_num(0, 99999), random_num(0, 99999), KZWeapons:random_num(_:KZW_AWP, _:KZW_SCOUT), var, sizeof(var));
 }
-public map_details_handler(mapname[], KZMap_Type:type, KZMap_Length:length, KZMap_Difficulty:diff)
+public map_details_handler(mapname[], wr[], map_props[3])
 {
 	new szType[32], szLength[32], szDifficulty[32];
 
-	kz_api_get_map_type(type, szType, charsmax(szType));
-	kz_api_get_map_length(length, szLength, charsmax(szLength));
-	kz_api_get_map_difficulty(diff, szDifficulty, charsmax(szDifficulty));
+	kz_api_get_map_type(map_props[0], szType, charsmax(szType));
+	kz_api_get_map_length(map_props[1], szLength, charsmax(szLength));
+	kz_api_get_map_difficulty(map_props[2], szDifficulty, charsmax(szDifficulty));
 
 	server_print("[AMXX] Received details for map (%s): [type: %d][length: %d][diff: %s] - [%s][%s][%s]", mapname, type, length, diff, szType, szLength, szDifficulty);
 }

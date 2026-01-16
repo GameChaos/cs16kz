@@ -6,7 +6,7 @@
 /**
  * Map types
  */
-enum KZMap_Type
+enum
 {
 	KZM_BHOP,
 	KZM_CLIMB,
@@ -18,7 +18,7 @@ enum KZMap_Type
 /**
  * Map length
  */
-enum KZMap_Length
+enum
 {
 	KZM_VERY_SHORT = 0,
 	KZM_SHORT,
@@ -30,7 +30,7 @@ enum KZMap_Length
 /**
  * Map difficulty
  */
-enum KZMap_Difficulty
+enum
 {
 	KZM_BEGINNER = 0,
 	KZM_EASY,
@@ -61,7 +61,7 @@ enum KZWeapons
 };
 
 /**
- * Returns the string representation of a KZMap_Type.
+ * Returns the string representation of map type enum.
  *
  * @param type          The map type enum
  * @param output        The buffer to store the string
@@ -69,7 +69,7 @@ enum KZWeapons
  *
  * @return              0
  */
-stock kz_api_get_map_type(KZMap_Type:type, output[], maxlen)
+stock kz_api_get_map_type(type, output[], maxlen)
 {
 	switch(type)
 	{
@@ -83,7 +83,7 @@ stock kz_api_get_map_type(KZMap_Type:type, output[], maxlen)
 }
 
 /**
- * Returns the string representation of a KZMap_Length.
+ * Returns the string representation of map length enum.
  *
  * @param length        The map length enum
  * @param output        The buffer to store the string
@@ -91,7 +91,7 @@ stock kz_api_get_map_type(KZMap_Type:type, output[], maxlen)
  *
  * @return              0
  */
-stock kz_api_get_map_length(KZMap_Length:length, output[], maxlen)
+stock kz_api_get_map_length(length, output[], maxlen)
 {
 	switch(length)
 	{
@@ -105,7 +105,7 @@ stock kz_api_get_map_length(KZMap_Length:length, output[], maxlen)
 }
 
 /**
- * Returns the string representation of a KZMap_Difficulty.
+ * Returns the string representation of map difficulty enum.
  *
  * @param difficulty    The map difficulty enum
  * @param output        The buffer to store the string
@@ -113,7 +113,7 @@ stock kz_api_get_map_length(KZMap_Length:length, output[], maxlen)
  *
  * @return              0
  */
-stock kz_api_get_map_difficulty(KZMap_Difficulty:difficulty, output[], maxlen)
+stock kz_api_get_map_difficulty(difficulty, output[], maxlen)
 {
 	switch(difficulty)
 	{

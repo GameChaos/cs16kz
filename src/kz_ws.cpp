@@ -143,6 +143,7 @@ void kz_ws_init()
 }
 void kz_ws_uninit(void)
 {
+    kz_ws_stop();
     ix::uninitNetSystem();
 }
 void kz_ws_start(std::string url, std::string token)

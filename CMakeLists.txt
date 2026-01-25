@@ -20,7 +20,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 set(COMMON_FLAGS "-m32 -pipe -shared -lm -ldl")
-set(COMMON_CXX_FLAGS "-flto=auto -funroll-loops -fpermissive -fno-strict-aliasing -fno-rtti ")
+set(COMMON_CXX_FLAGS "-flto=auto -funroll-loops -fpermissive -fno-strict-aliasing -fno-rtti --param=destructive-interference-size=64")
 
 set(CMAKE_C_FLAGS_DEBUG "-O2 -ggdb3 -fno-omit-frame-pointer")
 set(CMAKE_CXX_FLAGS_DEBUG "-O2 -ggdb3 -fno-omit-frame-pointer")

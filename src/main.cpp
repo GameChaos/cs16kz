@@ -2,19 +2,18 @@
 #include "resdk/mod_rehlds_api.h"
 
 #include "pdata.h"
+#include "kz_ws.h"
 #include "kz_util.h"
 #include "kz_cvars.h"
-
-#include "kz_ws.h"
+#include "kz_replay.h"
 #include "kz_storage.h"
 #include "kz_natives.h"
 
-edict_t* g_pEdicts   = nullptr;
-cvar_t* kz_api_url   = nullptr;
-cvar_t* kz_api_token = nullptr;
+#include <filesystem>
 
-cvar_t* kz_api_log_send = nullptr;
-cvar_t* kz_api_log_recv = nullptr;
+edict_t* g_pEdicts = nullptr;
+bool g_initialiazed = false;
+std::filesystem::path g_data_dir;
 
 void RH_Cvar_DirectSet(IRehldsHook_Cvar_DirectSet* chain, cvar_t* var, const char* value);
 void KZ_Cvar_DirectSet(const char* const varname, const char* const value);
@@ -43,33 +42,69 @@ void FN_AMXX_ATTACH()
     kz_ws_register(WSMessageType::add_replay,  kz_ws_ack_add_replay);
     kz_ws_register(WSMessageType::get_replay,  kz_ws_ack_get_replay);
 
-    kz_api_url      = UTIL_register_cvar("kz_api_url",  "", FCVAR_EXTDLL | FCVAR_PROTECTED | FCVAR_SPONLY);
-    kz_api_token    = UTIL_register_cvar("kz_api_token","", FCVAR_EXTDLL | FCVAR_PROTECTED | FCVAR_SPONLY);
+    kz_api_url      = register_cvar("kz_api_url",  "", FCVAR_EXTDLL | FCVAR_PROTECTED | FCVAR_SPONLY);
+    kz_api_token    = register_cvar("kz_api_token","", FCVAR_EXTDLL | FCVAR_PROTECTED | FCVAR_SPONLY);
 
-    kz_api_log_send = UTIL_register_cvar("kz_api_log_send", "0", FCVAR_EXTDLL | FCVAR_SPONLY);
-    kz_api_log_recv = UTIL_register_cvar("kz_api_log_recv", "0", FCVAR_EXTDLL | FCVAR_SPONLY);
-
-    kz_storage_init(MF_Log);
-    kz_ws_init(std::this_thread::get_id());
-
+    kz_api_log_send = register_cvar("kz_api_log_send", "1", FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_log_recv = register_cvar("kz_api_log_recv", "1", FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_log_upload = register_cvar("kz_api_log_upload", "1", FCVAR_EXTDLL | FCVAR_SPONLY);
     kz_api_add_natives();
 }
 void FN_AMXX_PLUGINSLOADED()
 {
+    g_data_dir = std::filesystem::path("cstrike") / MF_GetLocalInfo("amxx_datadir", "addons/amxmodx/data") / "kz_global";
+    if (!std::filesystem::exists(g_data_dir))
+    {
+        std::error_code ec;
+        if(std::filesystem::create_directories(g_data_dir, ec))
+        {
+            kz_log(nullptr, "Directory created: %s", g_data_dir.c_str());
+        }
+        else
+        {
+            kz_log(nullptr, "Failed to create directory (%s): %s", g_data_dir.c_str(), ec.message().c_str());
+        }
+    }
+
+    kz_rp_update_header();
     kz_api_add_forwards();
+
+    if (!g_initialiazed)
+    {
+        g_initialiazed = true;
+
+        kz_log_init(std::this_thread::get_id());
+        kz_storage_init();
+        kz_ws_init();
+        kz_rp_init();
+    }
+
 }
 void FN_META_DETACH()
 {
-    kz_ws_uninit();
-    kz_storage_uninit();
+    if (g_initialiazed)
+    {
+        kz_rp_uninit();
+        kz_ws_uninit();
+        kz_storage_uninit();
+    }
 }
 /***************************************************************************************************************/
 /***************************************************************************************************************/
 void FN_StartFrame()
 {
+    if (!g_initialiazed)
+    {
+        RETURN_META(MRES_IGNORED);
+    }
     kz_run_cvar_checker();
+    kz_log_flush();
     kz_ws_run_tasks(5);
 
+    RETURN_META(MRES_IGNORED);
+}
+void FN_ServerActivate(edict_t* pEdictList, int edictCount, int clientMax)
+{
     RETURN_META(MRES_IGNORED);
 }
 void FN_ServerDeactivate_Post(void)
@@ -115,19 +150,40 @@ void FN_Cvar_DirectSet_Post(struct cvar_s *var, char *value)
 }
 /***************************************************************************************************************/
 /***************************************************************************************************************/
+void FN_CmdStart(const edict_t* player, const struct usercmd_s* cmd, unsigned int random_seed)
+{
+    int id = indexOfEdict(player);
+    if (!MF_IsPlayerBot(id) && MF_IsPlayerAlive(id))
+    {
+        kz_rp_set_cmd(id, cmd);
+    }
+    RETURN_META(MRES_IGNORED);
+}
 void FN_PlayerPreThink(edict_t* pEntity)
 {
-    // TODO: dont trust qqc2 result and actually check stuff here...
+    int id = indexOfEdict(pEntity);
+    if (!MF_IsPlayerBot(id))
+    {
+    }
+    RETURN_META(MRES_IGNORED);
+}
+void FN_PlayerPostThink(edict_t* pEntity)
+{
+    int id = indexOfEdict(pEntity);
+    if (!MF_IsPlayerBot(id) && MF_IsPlayerAlive(id))
+    {
+        kz_rp_set_vars(id, &(pEntity->v));
+        kz_rp_write_frame(id);
+    }
+    RETURN_META(MRES_IGNORED);
 }
 BOOL FN_ClientConnect_Post(edict_t* pEntity, const char* pszName, const char* pszAddress, char szRejectReason[128])
 {
     int id = ENTINDEX(pEntity);
-
     if (!MF_IsPlayerBot(id))
     {
         for(size_t i = 0; i < g_player_cvars_size; ++i)
         {
-            // maybe no? idk
             CLIENT_COMMAND(pEntity, "%s %s\n", g_player_cvars[i].name, g_player_cvars[i].expected_value);
         }
         kz_ws_event_client_connect(pEntity);

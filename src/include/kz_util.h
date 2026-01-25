@@ -1,8 +1,19 @@
 #ifndef KZ_UTIL_H
 #define KZ_UTIL_H
 
-extern void     UTIL_split_net_address(const char* addr, char* ip, size_t ip_maxlen, char* port, size_t port_maxlen);
-extern edict_t* UTIL_find_player_by_authid(const char* authid);
-extern cvar_t*  UTIL_register_cvar(const char* name, const char* value, int flags);
+extern void kz_log_init(std::thread::id t);
+extern void kz_log_addq(kz::queue<std::string>* queue);
+extern void kz_log_flush(void);
+extern void kz_log(kz::queue<std::string>* queue, const char* fmt, ...);
+
+extern uint32_t UTIL_CRC32(const void *data, size_t dataLength);
+extern uint32_t UTIL_CRC32_Incremental(const void *data, size_t dataLength, uint32_t currentCrc);
+extern uint32_t get_map_crc32(const char* mapname);
+extern void to_base36(uint64_t value, char* dest, size_t len);
+extern void replace(char* c, char token, char with);
+extern size_t remove_substring(char* text, const char* what);
+extern void split_net_address(const char* addr, char* ip, size_t ip_maxlen, char* port, size_t port_maxlen);
+extern edict_t* find_player_by_authid(const char* authid);
+extern cvar_t* register_cvar(const char* name, const char* value, int flags);
 
 #endif

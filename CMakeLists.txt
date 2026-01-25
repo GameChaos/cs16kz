@@ -9,7 +9,7 @@ set(CMAKE_LIBRARY_ARCHITECTURE "i386-linux-gnu")
 set(CMAKE_PREFIX_PATH /usr/lib/i386-linux-gnu /usr/lib32 ${CMAKE_PREFIX_PATH})
 set(CMAKE_LIBRARY_PATH /usr/lib/i386-linux-gnu /usr/lib32 ${CMAKE_LIBRARY_PATH})
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_definitions(-DHAVE_STDINT_H -DJIT -DASM32 -Dg_rehlds_available=RehldsApi)
@@ -20,7 +20,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 set(COMMON_FLAGS "-m32 -pipe -shared -lm -ldl")
-set(COMMON_CXX_FLAGS "-funroll-loops -fpermissive -fno-strict-aliasing -fno-rtti -Wno-return-type -Wno-write-strings -Wno-delete-non-virtual-dtor")
+set(COMMON_CXX_FLAGS "-flto=auto -funroll-loops -fpermissive -fno-strict-aliasing -fno-rtti ")
 
 set(CMAKE_C_FLAGS_DEBUG "-O2 -ggdb3 -fno-omit-frame-pointer")
 set(CMAKE_CXX_FLAGS_DEBUG "-O2 -ggdb3 -fno-omit-frame-pointer")
@@ -56,6 +56,7 @@ set(SOURCES
     src/kz_cvars.cpp
     src/kz_ws.cpp
     src/kz_ws_msgs.cpp
+    src/kz_replay.cpp
     src/kz_storage.cpp
     src/kz_natives.cpp
     src/main.cpp

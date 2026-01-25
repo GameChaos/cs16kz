@@ -2,9 +2,10 @@
 #include "resdk/mod_rehlds_api.h"
 
 #include "pdata.h"
+#include "kz_ws.h"
 #include "kz_util.h"
 #include "kz_cvars.h"
-#include "kz_ws.h"
+#include "kz_storage.h"
 
 const pr_cvar_t g_server_cvars[] = {
     {"edgefricton",         "2",        nullptr},
@@ -40,6 +41,12 @@ const pr_cvar_t g_player_cvars[] = {
 };
 const size_t g_player_cvars_size = (sizeof(g_player_cvars) / sizeof(pr_cvar_t));
 static_assert(g_player_cvars_size <= 64, "???? How many cvars did you there ???");
+
+cvar_t* kz_api_url      = nullptr;
+cvar_t* kz_api_token    = nullptr;
+cvar_t* kz_api_log_send = nullptr;
+cvar_t* kz_api_log_recv = nullptr;
+cvar_t* kz_api_log_upload = nullptr;
 
 char g_prev_api_url[64];
 char g_prev_api_token[64];

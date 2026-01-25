@@ -42,12 +42,10 @@ typedef void (*WSMessageFunc)(JSON_Object*);
 
 extern kz::websocket g_websocket;
 extern std::atomic<WSState> g_websocket_state;
-
-extern kz::queue<std::string> g_log_queue;
 extern kz::queue<std::string> g_outgoing_queue;
 extern kz::queue<JSON_Value*> g_incoming_queue;
 
-extern void kz_ws_init(std::thread::id t);
+extern void kz_ws_init(void);
 extern void kz_ws_uninit(void);
 
 extern void kz_ws_start(std::string url, std::string token);

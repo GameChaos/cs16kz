@@ -1,49 +1,27 @@
 #include "amxxmodule.h"
 
-#include "kz_util.h"
+#include "pdata.h"
 #include "kz_ws.h"
+#include "kz_util.h"
+#include "kz_cvars.h"
 #include "kz_storage.h"
-
-std::thread::id g_main_thread;
 
 std::string g_hello_msg;
 kz::websocket g_websocket;
 std::atomic<WSState> g_websocket_state;
 
-kz::queue<std::string> g_log_queue(64);
+kz::queue<std::string> g_ws_log(64);
 kz::queue<std::string> g_outgoing_queue(64);
 kz::queue<JSON_Value*> g_incoming_queue(64);
 
-extern cvar_t* kz_api_log_send;
-extern cvar_t* kz_api_log_recv;
-
-static inline void __ws_log__(const char* msg, ...)
-{
-    char buffer[256];
-    va_list args;
-
-    va_start(args, msg);
-    vsnprintf(buffer, sizeof(buffer), msg, args);
-    va_end(args);
-
-    if(std::this_thread::get_id() == g_main_thread)
-    {
-        MF_Log("%s", buffer);
-        return;
-    }
-    while(!g_log_queue.try_push(buffer))
-    {
-        std::this_thread::yield();
-    }
-}
 static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
 {
     switch(msg->type)
     {
         case ix::WebSocketMessageType::Open:
         {
-            kz_storage_init(__ws_log__);
-            __ws_log__("[WS] Connection established.");
+            kz_storage_init();
+            kz_log(&g_ws_log, "[WS] Connection established.");
             g_websocket_state.store(WSState::Connected);
             kz_ws_send_msg(g_hello_msg, 0);
             break;
@@ -53,13 +31,13 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
             const char* c_data = msg->str.c_str();
             if(kz_api_log_recv->value > 0.0f)
             {
-                __ws_log__("[WS] Received message: %s", c_data);
+                kz_log(&g_ws_log, "[WS] Received message: %s", c_data);
             }
 
             JSON_Value* root_val = json_parse_string(c_data);
             if(!root_val)
             {
-                __ws_log__("[WS] Failed to parse json.");
+                kz_log(&g_ws_log, "[WS] Failed to parse json.");
                 break;
             }
 
@@ -73,7 +51,7 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
 
                 if(elapsed >= 30)
                 {
-                    __ws_log__("[WS] Dropped message: %s", c_data);
+                    kz_log(&g_ws_log, "[WS] Dropped message: %s", c_data);
                     json_value_free(root_val);
                     break;
                 }
@@ -81,24 +59,24 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
             }
             if(msg_id > 0)
             {
-                kz_storage_delete(msg_id);
+                kz_storage_delete(msg_id, StorageTable::outgoing_queue);
             }
             break;
         }
         case ix::WebSocketMessageType::Ping:
         {
-            __ws_log__("[WS] Ping.");
+            kz_log(&g_ws_log, "[WS] Ping.");
             break;
         }
         case ix::WebSocketMessageType::Pong:
         {
-            __ws_log__("[WS] Pong.");
+            kz_log(&g_ws_log, "[WS] Pong.");
             break;
         }
         case ix::WebSocketMessageType::Close:
         {
             kz_storage_uninit();
-            __ws_log__("[WS] Connection closed (%d): %s", msg->closeInfo.code, msg->closeInfo.reason.c_str());
+            kz_log(&g_ws_log, "[WS] Connection closed (%d): %s", msg->closeInfo.code, msg->closeInfo.reason.c_str());
             switch(msg->closeInfo.code)
             {
                 default:
@@ -112,7 +90,7 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
         case ix::WebSocketMessageType::Error:
         {
             kz_storage_uninit();
-            __ws_log__("[WS] Error occured (%d): %s", msg->errorInfo.http_status, msg->errorInfo.reason.c_str());
+            kz_log(&g_ws_log, "[WS] Error occured (%d): %s", msg->errorInfo.http_status, msg->errorInfo.reason.c_str());
             switch(msg->errorInfo.http_status)
             {
                 case 401: // Unauthorized
@@ -141,9 +119,9 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
         }
     }
 }
-void kz_ws_init(std::thread::id t)
+void kz_ws_init()
 {
-    g_main_thread = t;
+    kz_log_addq(&g_ws_log);
     ix::initNetSystem();
 
     JSON_Value* data_val = json_value_init_object();
@@ -152,11 +130,10 @@ void kz_ws_init(std::thread::id t)
     char szIP[16];
     char szPort[6];
     const char* addr = CVAR_GET_STRING("net_address");
-    UTIL_split_net_address(addr, szIP, sizeof(szIP), szPort, sizeof(szPort));
+    split_net_address(addr, szIP, sizeof(szIP), szPort, sizeof(szPort));
 
     json_object_dotset_string(data_obj, "plugin.version", MODULE_VERSION);
-    //json_object_dotset_string(data_obj, "plugin.s_checksum", MODULE_SOURCE_CHECKSUM);
-    //json_object_dotset_string(data_obj, "plugin.r_checksum", MODULE_RUNTIME_CHECKSUM);
+    //json_object_dotset_string(data_obj, "plugin.checksum", MODULE_CHECKSUM);
 
     json_object_dotset_string(data_obj, "server.hostname", CVAR_GET_STRING("hostname"));
     json_object_dotset_string(data_obj, "server.address", szIP);
@@ -211,7 +188,7 @@ void kz_ws_build_msg(WSMessageType type, JSON_Value* data_val, std::string& msg,
     }
     else
     {
-        __ws_log__("[WS] Failed to serialize json (msg_type: %d)", ectoi(type));
+        kz_log(&g_ws_log, "[WS] Failed to serialize json (msg_type: %d)", ectoi(type));
     }
     json_value_free(root_val);
 }
@@ -219,14 +196,12 @@ void kz_ws_queue_msg(std::string& msg, int64_t msg_id)
 {
     if(msg.empty())
     {
-        __ws_log__("[WS] Tried to queue empty message.");
+        kz_log(&g_ws_log, "[WS] Tried to queue empty message.");
         return;
     }
-
-    kz_storage_save(msg, msg_id);
     if(!g_outgoing_queue.try_push(std::move(msg)))
     {
-        __ws_log__("[WS] Failed to queue message [sid: %lld]: %s", msg_id, msg.c_str());
+        kz_log(&g_ws_log, "[WS] Failed to queue message [sid: %lld]: %s", msg_id, msg.c_str());
     }
     return;
 }
@@ -234,17 +209,17 @@ void kz_ws_send_msg(std::string& msg, int64_t msg_id)
 {
     if(msg.empty())
     {
-        __ws_log__("[WS] Tried to send empty message.");
+        kz_log(&g_ws_log, "[WS] Tried to send empty message.");
         return;
     }
 
     ix::WebSocketSendInfo result = g_websocket.sendUtf8Text(msg);
     if (!result.success)
     {
-        __ws_log__("[WS] Failed to send message [sid: %lld]: %s", msg_id, msg.c_str());
+        kz_log(&g_ws_log, "[WS] Failed to send message [sid: %lld]: %s", msg_id, msg.c_str());
     }
     else if(kz_api_log_send->value > 0.0f)
     {
-        __ws_log__("[WS] Sending message: %s", msg.c_str());
+        kz_log(&g_ws_log, "[WS] Sending message: %s", msg.c_str());
     }
 }

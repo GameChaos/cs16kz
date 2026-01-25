@@ -1,79 +1,59 @@
-#include <iostream>
-#include <vector>
+#include "amxxmodule.h"
 
-#if defined (__linux__)
-    #include <sys/types.h>
-    #include <sys/stat.h>
-#endif
-
-
-#include <SQLiteCpp/SQLiteCpp.h>
+#include "pdata.h"
+#include "kz_ws.h"
+#include "kz_util.h"
+#include "kz_cvars.h"
+#include "kz_replay.h"
 #include "kz_storage.h"
+#include "kz_natives.h"
+
+#include <exception>
+#include <filesystem>
+#include <SQLiteCpp/SQLiteCpp.h>
 
 
-static const char* KZ_DATABASE_PATH = "cstrike/addons/amxmodx/data/sqlite3";
-static const char* KZ_DATABASE_FILE = "cstrike/addons/amxmodx/data/sqlite3/kz_global_api.sq3";
-
+extern std::filesystem::path g_data_dir;
+static const char* KZ_DATABASE_PATH = "kz_global/sqlite3";
 static thread_local SQLite::Database* kz_storage_database = nullptr;
 static thread_local bool kz_storage_initialiazed = false;
+static thread_local kz::queue<std::string> g_storage_log(64);
 
-typedef void(*logfunc)(const char*, ...);
-static thread_local logfunc kz_storage_log = nullptr;
-
-inline bool DirExists(const char *dir)
-{
-#if defined WIN32 || defined _WIN32
-	DWORD attr = GetFileAttributes(dir);
-
-	if (attr == INVALID_FILE_ATTRIBUTES)
-		return false;
-
-	if (attr & FILE_ATTRIBUTE_DIRECTORY)
-		return true;
-
-#else
-	struct stat s;
-
-	if (stat(dir, &s) != 0)
-		return false;
-
-	if (S_ISDIR(s.st_mode))
-		return true;
-#endif
-
-	return false;
-}
-
-
-void kz_storage_init(logfunc pfn)
+void kz_storage_init(void)
 {
     if(!kz_storage_initialiazed)
     {
-        kz_storage_log = pfn;
+        kz_log_addq(&g_storage_log);
 
-        if (!DirExists(KZ_DATABASE_PATH))
-	{
-            #if defined(__linux__)
-            mkdir(KZ_DATABASE_PATH, 0775);
-            #else
-            mkdir(KZ_DATABASE_PATH);
-            #endif
-	}
+        std::filesystem::path dir = g_data_dir / KZ_DATABASE_PATH;
+        if (!std::filesystem::exists(dir))
+        {
+            std::error_code ec;
+            if (std::filesystem::create_directories(dir, ec))
+            {
+                kz_log(&g_storage_log, "Directory created: %s", dir.c_str());
+            }
+            else
+            {
+                kz_log(&g_storage_log, "Failed to create directory (%s): %s", dir.c_str(), ec.message().c_str());
+                return;
+            }
+        }
         try
         {
-            kz_storage_database = new SQLite::Database(KZ_DATABASE_FILE, SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
+            std::filesystem::path file = g_data_dir / KZ_DATABASE_PATH / "storage.sq3";
+            kz_storage_database = new SQLite::Database(file.c_str(), SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
             kz_storage_database->exec("PRAGMA journal_mode=WAL;");
             kz_storage_database->exec("CREATE TABLE IF NOT EXISTS outgoing_queue(id INTEGER PRIMARY KEY AUTOINCREMENT, msg TEXT NOT NULL)");
+            kz_storage_database->exec("CREATE TABLE IF NOT EXISTS replay_up_queue(id INTEGER PRIMARY KEY AUTOINCREMENT, fs_uid TEXT NOT NULL)");
             kz_storage_database->setBusyTimeout(5000);
 
             kz_storage_initialiazed = true;
         }
         catch (const std::exception& e)
         {
-            if(kz_storage_log)
-            {
-                kz_storage_log("[Storage] init: %s", e.what());
-            }
+            kz_log(&g_storage_log, "[Storage] init: %s", e.what());
+
         }
     }
 }
@@ -84,19 +64,28 @@ void kz_storage_uninit(void)
         delete kz_storage_database;
         kz_storage_database = nullptr;
         kz_storage_initialiazed = false;
-
-        if(kz_storage_log)
-        {
-            kz_storage_log("[Storage] uninit: Connection closed.");
-        }
     }
 }
-int64_t kz_storage_get_next_id(void)
+int64_t kz_storage_get_next_id(StorageTable table)
 {
     try
     {
+        char statement[256];
+        switch(table)
+        {
+            case StorageTable::outgoing_queue:
+            {
+                snprintf(statement, sizeof(statement), "SELECT seq FROM sqlite_sequence WHERE name='outgoing_queue'");
+                break;
+            }
+            case StorageTable::replay_up_queue:
+            {
+                snprintf(statement, sizeof(statement), "SELECT seq FROM sqlite_sequence WHERE name='replay_up_queue'");
+                break;
+            }
+        }
         int64_t next_id = 1;
-        SQLite::Statement query(*kz_storage_database, "SELECT seq FROM sqlite_sequence WHERE name='outgoing_queue'");
+        SQLite::Statement query(*kz_storage_database, statement);
         if(query.executeStep())
         {
             next_id = query.getColumn(0).getInt64() + 1;
@@ -105,43 +94,62 @@ int64_t kz_storage_get_next_id(void)
     }
     catch (const std::exception& e)
     {
-        if(kz_storage_log)
-        {
-            kz_storage_log("[Storage] get_next_id: %s", e.what());
-        }
+        kz_log(&g_storage_log, "[Storage] get_next_id: %s", e.what());
     }
     return 1;
 }
-void kz_storage_save(const std::string& text, int64_t msg_id)
+void kz_storage_save(const std::string& text, int64_t msg_id, StorageTable table)
 {
     try
     {
-        SQLite::Statement query(*kz_storage_database, "INSERT INTO outgoing_queue (id, msg) VALUES (?, ?)");
+        char statement[256];
+        switch(table)
+        {
+            case StorageTable::outgoing_queue:
+            {
+                snprintf(statement, sizeof(statement), "INSERT INTO outgoing_queue (id, msg) VALUES (?, ?)");
+                break;
+            }
+            case StorageTable::replay_up_queue:
+            {
+                snprintf(statement, sizeof(statement), "INSERT INTO replay_up_queue (id, fs_uid) VALUES (?, ?)");
+                break;
+            }
+        }
+        SQLite::Statement query(*kz_storage_database, statement);
         query.bind(1, static_cast<long long>(msg_id));
         query.bind(2, text);
         query.exec();
     }
     catch (const std::exception& e)
     {
-        if(kz_storage_log)
-        {
-            kz_storage_log("[Storage] save: %s", e.what());
-        }
+        kz_log(&g_storage_log, "[Storage] save: %s", e.what());
     }
 }
-void kz_storage_delete(int64_t msg_id)
+void kz_storage_delete(int64_t msg_id, StorageTable table)
 {
     try
     {
+        char statement[256];
+        switch(table)
+        {
+            case StorageTable::outgoing_queue:
+            {
+                snprintf(statement, sizeof(statement), "DELETE FROM outgoing_queue WHERE id = ?");
+                break;
+            }
+            case StorageTable::replay_up_queue:
+            {
+                snprintf(statement, sizeof(statement), "DELETE FROM replay_up_queue WHERE id = ?");
+                break;
+            }
+        }
         SQLite::Statement query(*kz_storage_database, "DELETE FROM outgoing_queue WHERE id = ?");
         query.bind(1, static_cast<long long>(msg_id));
         query.exec();
     }
     catch (const std::exception& e)
     {
-        if(kz_storage_log)
-        {
-            kz_storage_log("[Storage] delete: %s", e.what());
-        }
+        kz_log(&g_storage_log, "[Storage] delete: %s", e.what());
     }
 }

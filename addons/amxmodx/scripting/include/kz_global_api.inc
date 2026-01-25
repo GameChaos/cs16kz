@@ -7,32 +7,12 @@
 #include <kz_global_api_version>
 
 /**
- * Called when a record has been successfully added to the global database.
- *
- * @param global_rec_id The unique record ID assigned by the database
- * @param data          Additional data array passed from the initial native call
- * @param dataSize      The size of the additional data array
- *
- * @noreturn
+ * Not implemented
  */
-forward kz_api_on_record_added(global_rec_id, data[], dataSize);
+forward kz_api_on_record_added(global_rec_id, ref_id[]);
 
 /**
- * Called when a replay upload process has completed.
- *
- * @param global_rec_id The unique record ID associated with the replay
- *
- * @noreturn
- */
-forward kz_api_on_replay_uploaded(global_rec_id);
-
-/**
- * Called when a replay download process has completed.
- *
- * @param global_rec_id The unique record ID requested
- * @param filepath      The local path where the file was saved
- *
- * @noreturn
+ * Not implemented
  */
 forward kz_api_on_replay_downloaded(global_rec_id, filepath[]);
 
@@ -55,67 +35,37 @@ forward kz_api_on_replay_downloaded(global_rec_id, filepath[]);
 native kz_api_get_map_details(mapname[], handler[]);
 
 /**
- * Adds a new record to the global KZ database.
- *
- * @param id            Player index
- * @param seconds       The completion time in seconds
- * @param checkpoints   Number of checkpoints made
- * @param gochecks      Number of teleports (gochecks) used
- * @param weapon        The weapon used during the run (from KZWeapons enum)
- * @param data          Additional data array to be passed to the forward handler
- * @param dataSize      The size of the additional data array
- *
- * @return              1 on success, 0 otherwise
- */
-native kz_api_add_record(id, Float:seconds, checkpoints, gochecks, KZWeapons:weapon, any:data[], dataSize);
-
-/**
- * Deletes a record from the global database.
- *
- * @param global_rec_id The unique record ID to delete
- *
- * @return              1 on success, 0 otherwise
+ * Not implemented
  */
 native kz_api_del_record(global_rec_id);
 
 /**
- * Associates a replay file with an existing global record.
- *
- * @param global_rec_id The unique record ID returned by the API
- * @param filepath      The local path to the replay file to be uploaded
- *
- * @return              1 on success, 0 otherwise
- */
-native kz_api_add_replay(global_rec_id, filepath[]);
-
-/**
- * Retrieves a replay file for a specific global record.
- *
- * @param global_rec_id The unique record ID to fetch
- * @param filepath      The local path where the replay file should be saved
- *
- * @return              1 on success, 0 otherwise
+ * Not implemented
  */
 native kz_api_get_replay(global_rec_id, filepath[]);
 
 /**
- * Internal callback for version verification. Do not modify.
+ * Notifies the API that a player has started a new run.
  */
-public __kz_global_api_version_check(const majorVersion, const minorVersion)
-{
-	if (majorVersion != KZ_GLOBAL_API_VERSION_MAJOR)
-	{
-		new temp[512];
-		formatex(temp, sizeof temp - 1, "[KZ Global]: Api major version mismatch; expected %d, real %d", KZ_GLOBAL_API_VERSION_MAJOR, majorVersion);
-		set_fail_state(temp);
-		return;
-	}
+native kz_api_run_started(id);
 
-	if (minorVersion < KZ_GLOBAL_API_VERSION_MINOR)
-	{
-		new temp[512];
-		formatex(temp, sizeof temp - 1, "[KZ Global]: Api minor version mismatch; expected at least %d, real %d", KZ_GLOBAL_API_VERSION_MINOR, minorVersion);
-		set_fail_state(temp);
-		return;
-	}
-}
+/**
+ * Notifies the API that a player has paused their run.
+ */
+native kz_api_run_paused(id);
+
+/**
+ * Notifies the API that a player has resumed their run.
+ */
+native kz_api_run_unpaused(id);
+
+/**
+ * Notifies the API that a run has been rejected or invalidated.
+ * @param delete_file   If true, tells the backend to discard local replay data.
+ */
+native kz_api_run_rejected(id, bool:delete_file);
+
+/**
+ * Notifies the API that a run has been successfully completed.
+ */
+native kz_api_run_finished(id, Float:time);

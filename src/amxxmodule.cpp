@@ -3065,7 +3065,7 @@ void UTIL_LogPrintf( const char *fmt, ... )
 	va_end   ( argptr );
 
 	// Print to server console
-	ALERT( at_logged, "%s", string );
+	ALERT( at_logged, (char*)"%s", string );
 }
 
 

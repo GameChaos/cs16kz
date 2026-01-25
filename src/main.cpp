@@ -184,7 +184,7 @@ BOOL FN_ClientConnect_Post(edict_t* pEntity, const char* pszName, const char* ps
     {
         for(size_t i = 0; i < g_player_cvars_size; ++i)
         {
-            CLIENT_COMMAND(pEntity, "%s %s\n", g_player_cvars[i].name, g_player_cvars[i].expected_value);
+            CLIENT_COMMAND(pEntity, (char*)"%s %s\n", g_player_cvars[i].name, g_player_cvars[i].expected_value);
         }
         kz_ws_event_client_connect(pEntity);
     }

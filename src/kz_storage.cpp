@@ -14,7 +14,7 @@
 
 
 extern std::filesystem::path g_data_dir;
-static const char* KZ_DATABASE_PATH = "kz_global/sqlite3";
+static const char* KZ_DATABASE_PATH = "sqlite3";
 static thread_local SQLite::Database* kz_storage_database = nullptr;
 static thread_local bool kz_storage_initialiazed = false;
 static thread_local kz::queue<std::string> g_storage_log(64);

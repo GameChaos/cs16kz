@@ -187,7 +187,7 @@ void kz_rp_update_header(void)
     g_header.map.checksum = get_map_crc32(STRING(gpGlobals->mapname));
     snprintf(g_header.map.name, sizeof(g_header.map.name), "%s", STRING(gpGlobals->mapname));
 
-    std::filesystem::path dir = g_data_dir / "kz_global" / "replays" / g_header.map.name;
+    std::filesystem::path dir = g_data_dir / "replays" / g_header.map.name;
     if (!std::filesystem::exists(dir))
     {
         std::error_code ec;
@@ -341,7 +341,7 @@ static void kz_rp_writer_thread(void)
 
                     header.timestamp = sig->ts;
 
-                    std::filesystem::path path = g_data_dir / "kz_global" / "replays" / mapname / sig->steamid;
+                    std::filesystem::path path = g_data_dir / "replays" / mapname / sig->steamid;
                     snprintf(s_filepath[id], sizeof(s_filepath[0]), "%s.tmp", path.c_str());
                     snprintf(header.player.steamid, sizeof(header.player.steamid), "%s", sig->steamid);
 
@@ -401,7 +401,7 @@ static void kz_rp_writer_thread(void)
                     krp_signal* sig     = reinterpret_cast<krp_signal*>(s_curr->data);
                     const char* mapname = g_header.map.name;
 
-                    std::filesystem::path path = g_data_dir / "kz_global" / "replays" / mapname / sig->steamid;
+                    std::filesystem::path path = g_data_dir / "replays" / mapname / sig->steamid;
                     snprintf(s_filepath[id], sizeof(s_filepath[0]), "%s.tmp", path.c_str());
 
                     if (s_fd[id])
@@ -454,7 +454,7 @@ static void kz_rp_writer_thread(void)
                         to_base36(kz_rp_timestamp_from_header(s_fd[id]), ts_str, sizeof(ts_str));
                         snprintf(uid_str, sizeof(uid_str), "%s_%s", sig->steamid, ts_str);
 
-                        std::filesystem::path npath = g_data_dir / "kz_global" / "replays" / mapname / uid_str;
+                        std::filesystem::path npath = g_data_dir / "replays" / mapname / uid_str;
                         snprintf(new_path, sizeof(new_path), "%s.krp_c", npath.c_str());
 
                         fclose(s_fd[id]);

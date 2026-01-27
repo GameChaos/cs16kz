@@ -7,6 +7,7 @@
 #include "kz_replay.h"
 #include "kz_storage.h"
 
+#include <condition_variable>
 #include <filesystem>
 
 #ifdef _WIN32
@@ -18,11 +19,22 @@
 krp_header g_header;
 krp_packet g_current_frame[33];
 std::atomic<bool> g_krp_running;
-kz::queue<std::string> g_replay_log(64);
-kz::queue<krp_packet> g_replay_queue(4096);
 
-static std::thread g_replay_thread;
-static void kz_rp_worker_thread(void);
+kz::queue<std::string> g_replay_writer_log(64);
+kz::queue<std::string> g_replay_upload_log(64);
+
+kz::queue<krp_packet> g_replay_writer_queue(4096); // (32 players * 100 fps each = 3096 + some additonal room)
+kz::queue<ws_upload_replay> g_replay_upload_queue(64);
+
+std::mutex g_replay_writer_mtx;
+std::mutex g_replay_upload_mtx;
+std::condition_variable g_replay_writer_cv;
+std::condition_variable g_replay_upload_cv;
+
+static std::thread g_replay_writer_thread;
+static std::thread g_replay_upload_thread;
+static void kz_rp_writer_thread(void);
+static void kz_rp_upload_thread(void);
 
 extern std::filesystem::path g_data_dir;
 
@@ -74,9 +86,9 @@ void kz_rp_run_started(int id)
     remove_substring(sig->steamid, ":");
 
     g_current_frame[id].player_index = id;
-    if(!g_replay_queue.try_push(item))
+    if(!g_replay_writer_queue.try_push(item))
     {
-        kz_log(&g_replay_log, "[KRP] The queue is full");
+        kz_log(nullptr, "[KRP] The queue is full");
     }
 }
 void kz_rp_run_teleport(int id)
@@ -89,9 +101,9 @@ void kz_rp_run_paused(int id)
     item.player_index = id;
     item.type = KRP_SIGNAL_PAUSE;
 
-    if (!g_replay_queue.try_push(item))
+    if (!g_replay_writer_queue.try_push(item))
     {
-        kz_log(&g_replay_log, "[KRP] The queue is full");
+        kz_log(nullptr, "[KRP] The queue is full");
     }
 }
 void kz_rp_run_unpaused(int id)
@@ -109,9 +121,9 @@ void kz_rp_run_unpaused(int id)
     remove_substring(sig->steamid, ":");
 
     g_current_frame[id].player_index = id;
-    if (!g_replay_queue.try_push(item))
+    if (!g_replay_writer_queue.try_push(item))
     {
-        kz_log(&g_replay_log, "[KRP] The queue is full");
+        kz_log(nullptr, "[KRP] The queue is full");
     }
 }
 void kz_rp_run_rejected(int id, bool delete_file)
@@ -123,9 +135,9 @@ void kz_rp_run_rejected(int id, bool delete_file)
     krp_signal* sig = reinterpret_cast<krp_signal*>(item.data);
     sig->delete_file = true;
 
-    if (!g_replay_queue.try_push(item))
+    if (!g_replay_writer_queue.try_push(item))
     {
-        kz_log(&g_replay_log, "[KRP] The queue is full");
+        kz_log(nullptr, "[KRP] The queue is full");
     }
 }
 
@@ -144,18 +156,21 @@ void kz_rp_run_finished(int id, float time)
     remove_substring(sig->steamid, ":");
     remove_substring(sig->steamid, ":");
 
-    if (!g_replay_queue.try_push(item))
+    if (!g_replay_writer_queue.try_push(item))
     {
-        kz_log(&g_replay_log, "[KRP] The queue is full");
+        kz_log(nullptr, "[KRP] The queue is full");
     }
 }
 /***************************************************************************************************************/
 /***************************************************************************************************************/
 void kz_rp_init(void)
 {
-    kz_log_addq(&g_replay_log);
+    kz_log_addq(&g_replay_writer_log);
+    kz_log_addq(&g_replay_upload_log);
     g_krp_running.store(true);
-    g_replay_thread = std::thread(kz_rp_worker_thread);
+
+    g_replay_writer_thread = std::thread(kz_rp_writer_thread);
+    g_replay_upload_thread = std::thread(kz_rp_upload_thread);
 }
 void kz_rp_update_header(void)
 {
@@ -178,11 +193,11 @@ void kz_rp_update_header(void)
         std::error_code ec;
         if (std::filesystem::create_directories(dir, ec))
         {
-            kz_log(&g_replay_log, "Directory created: %s", dir.c_str());
+            kz_log(nullptr, "Directory created: %s", dir.c_str());
         }
         else
         {
-            kz_log(&g_replay_log, "Failed to create directory (%s): %s", dir.c_str(), ec.message().c_str());
+            kz_log(nullptr, "Failed to create directory (%s): %s", dir.c_str(), ec.message().c_str());
             return;
         }
     }
@@ -190,7 +205,9 @@ void kz_rp_update_header(void)
 void kz_rp_uninit()
 {
     g_krp_running.store(false);
-    g_replay_thread.join();
+
+    g_replay_writer_thread.join();
+    g_replay_upload_thread.join();
 }
 void kz_rp_set_cmd(int id, const usercmd_t* cmd)
 {
@@ -213,83 +230,25 @@ void kz_rp_write_frame(int id)
 {
     g_current_frame[id].player_index = id;
     g_current_frame[id].type = KRP_SIGNAL_FRAME;
-    if (!g_replay_queue.try_push(g_current_frame[id]))
+    if (!g_replay_writer_queue.try_push(g_current_frame[id]))
     {
         assert(!"This is not supposed to happend.");
+    }
+    else
+    {
+        g_replay_writer_cv.notify_one();
     }
 }
 void kz_rp_upload_async(ws_upload_replay upr)
 {
-    std::thread([upr]() mutable {
-
-            kz::queue<std::string> self_log(32);
-            kz_log_addq(&self_log);
-
-            FILE* fp = fopen(upr.filepath, "rb");
-
-            if (!fp)
-            {
-                kz_log(&self_log, "[Upload] fopen failure:", strerror(errno));
-                // no goto :(
-                while (self_log.front())
-                {
-                    std::this_thread::yield();
-                    return;
-                }
-            }
-
-            const size_t max_data_per_chunk = (CHUNK_SIZE - sizeof(ws_upload_chunk_header));
-            fseek(fp, 0, SEEK_END);
-            uint32_t total_chunks = (ftell(fp) + (max_data_per_chunk - 1)) / max_data_per_chunk;
-
-            if(kz_api_log_upload->value > 0.0f)
-            {
-                kz_log(&self_log, "[Upload] Starting: %llu (%u chunks)", upr.rec_id, total_chunks);
-            }
-            auto last_log_time = std::chrono::steady_clock::now();
-
-            for (uint32_t i = 0; i < total_chunks; ++i)
-            {
-                fseek(fp, i * max_data_per_chunk, SEEK_SET);
-
-                char buffer[CHUNK_SIZE];
-                char* data_ptr = buffer + sizeof(ws_upload_chunk_header);
-                size_t bytes = fread(data_ptr, 1, max_data_per_chunk, fp);
-
-                if (bytes > 0)
-                {
-                    ws_upload_chunk_header* header = reinterpret_cast<ws_upload_chunk_header*>(buffer);
-                    memset(header, 0, sizeof(*header));
-
-                    header->rec_id           = upr.rec_id;
-                    header->chunk_index      = i;
-                    header->chunk_checksum   = UTIL_CRC32(data_ptr, bytes);
-                    memcpy(header->local_uid, upr.local_uid, sizeof(header->local_uid));
-
-                    g_websocket.sendBinary(std::string(buffer, sizeof(*header) + bytes));
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                }
-
-                std::this_thread::yield();
-                if (kz_api_log_upload->value > 0.0f)
-                {
-                    auto now = std::chrono::steady_clock::now();
-                    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_log_time).count();
-                    if (elapsed > 1 || i == (total_chunks - 1))
-                    {
-                        float p = (static_cast<float>(i + 1) / static_cast<float>(total_chunks)) * 100.0f;
-                        kz_log(&self_log, "[Upload] ID: %llu -> %u/%u chunks - %0.1f%% complete", upr.rec_id, (i + 1), total_chunks, p);
-                        last_log_time = now;
-                    }
-                }
-            }
-
-            fclose(fp);
-            while (self_log.front())
-            {
-                std::this_thread::yield();
-            }
-            }).detach();
+    if (!g_replay_upload_queue.try_push(upr))
+    {
+        kz_log(nullptr, "[KRP] The queue is full");
+    }
+    else
+    {
+        g_replay_upload_cv.notify_one();
+    }
 }
 /***************************************************************************************************************/
 /***************************************************************************************************************/
@@ -349,7 +308,7 @@ static void kz_rp_write_delta(FILE* fp, krp_packet* curr, krp_packet* last)
     memcpy(buffer, &mask, sizeof(mask));
     fwrite(buffer, offset, 1, fp);
 }
-static void kz_rp_worker_thread(void)
+static void kz_rp_writer_thread(void)
 {
     static FILE* s_fd[33];
     static krp_packet s_last[33];
@@ -358,9 +317,9 @@ static void kz_rp_worker_thread(void)
     static char s_filepath[33][255];
 
     kz_storage_init();
-    while (g_krp_running.load() || !g_replay_queue.empty())
+    while (g_krp_running.load() || !g_replay_writer_queue.empty())
     {
-        while (krp_packet* s_curr = g_replay_queue.front())
+        while (krp_packet* s_curr = g_replay_writer_queue.front())
         {
             int id = s_curr->player_index;
             switch (s_curr->type)
@@ -373,7 +332,7 @@ static void kz_rp_worker_thread(void)
                         fclose(s_fd[id]);
                         s_fd[id] = nullptr;
 
-                        kz_log(&g_replay_log, "[KRP] run_start: closing active file descriptor for player (%d)", id);
+                        kz_log(&g_replay_writer_log, "[KRP] run_start: closing active file descriptor for player (%d)", id);
                     }
 
                     krp_signal* sig     = reinterpret_cast<krp_signal*>(s_curr->data);
@@ -393,7 +352,7 @@ static void kz_rp_worker_thread(void)
                     }
                     else
                     {
-                        kz_log(&g_replay_log, "[KRP] ERROR: Could not create %s (%s)", s_filepath[id], strerror(errno));
+                        kz_log(&g_replay_writer_log, "[KRP] ERROR: Could not create %s (%s)", s_filepath[id], strerror(errno));
                     }
                     memset(&s_last[id], 0, sizeof(s_last[0]));
                     s_counter[id] = 0;
@@ -409,6 +368,7 @@ static void kz_rp_worker_thread(void)
                     if (s_fd[id])
                     {
                         // TODO: add zstd for ultra compression ??
+                        // TODO: write in chunks, less io
                         if (!s_counter[id])
                         {
                             // We write a full frame (no delta) when the run just started or got unpaused (savepos)
@@ -432,7 +392,7 @@ static void kz_rp_worker_thread(void)
                     }
                     else
                     {
-                        kz_log(&g_replay_log, "[KRP] run_pause: no file descriptor for player (%d)", id);
+                        kz_log(&g_replay_writer_log, "[KRP] run_pause: no file descriptor for player (%d)", id);
                     }
                     break;
                 }
@@ -449,7 +409,7 @@ static void kz_rp_worker_thread(void)
                         fclose(s_fd[id]);
                         s_fd[id] = nullptr;
 
-                        kz_log(&g_replay_log, "[KRP] run_unpause: closing active file descriptor for player (%d)", id);
+                        kz_log(&g_replay_writer_log, "[KRP] run_unpause: closing active file descriptor for player (%d)", id);
                     }
                     if (!s_fd[id])
                     {
@@ -458,7 +418,7 @@ static void kz_rp_worker_thread(void)
                     }
                     if (!s_fd[id])
                     {
-                        kz_log(&g_replay_log, "[KRP] ERROR: Could not open %s (%s)", s_filepath[id], strerror(errno));
+                        kz_log(&g_replay_writer_log, "[KRP] ERROR: Could not open %s (%s)", s_filepath[id], strerror(errno));
                     }
                     break;
                 }
@@ -477,7 +437,7 @@ static void kz_rp_worker_thread(void)
                     }
                     else
                     {
-                        kz_log(&g_replay_log, "[KRP] run_reject: no file descriptor for player (%d)", id);
+                        kz_log(&g_replay_writer_log, "[KRP] run_reject: no file descriptor for player (%d)", id);
                     }
                     break;
                 }
@@ -503,11 +463,11 @@ static void kz_rp_worker_thread(void)
                         if (rename(s_filepath[id], new_path) == 0)
                         {
                             kz_storage_save(uid_str, kz_storage_get_next_id(StorageTable::replay_up_queue), StorageTable::replay_up_queue);
-                            kz_log(&g_replay_log, "[KRP] Saved replay: %s.krp_c", uid_str);
+                            kz_log(&g_replay_writer_log, "[KRP] Saved replay: %s.krp_c", uid_str);
                         }
                         else
                         {
-                            kz_log(&g_replay_log, "[KRP] ERROR: Rename failed (%s)", strerror(errno));
+                            kz_log(&g_replay_writer_log, "[KRP] ERROR: Rename failed (%s)", strerror(errno));
                             break;
                         }
 
@@ -534,14 +494,15 @@ static void kz_rp_worker_thread(void)
                     }
                     else
                     {
-                        kz_log(&g_replay_log, "[KRP] run_finish: no file descriptor for player (%d)", id);
+                        kz_log(&g_replay_writer_log, "[KRP] run_finish: no file descriptor for player (%d)", id);
                     }
                     break;
                 }
             }
-            g_replay_queue.pop();
+            g_replay_writer_queue.pop();
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        std::unique_lock<std::mutex> lock(g_replay_writer_mtx);
+        g_replay_writer_cv.wait(lock, []{ return (!g_replay_writer_queue.empty() || !g_krp_running.load()); });
     }
     for (int i = 0; i < 33; i++)
     {
@@ -551,9 +512,73 @@ static void kz_rp_worker_thread(void)
             s_fd[i] = nullptr;
         }
     }
-    while (g_replay_log.front())
-    {
-        std::this_thread::yield();
-    }
     kz_storage_uninit();
+}
+static void kz_rp_upload_thread(void)
+{
+    while (g_krp_running.load() || !g_replay_upload_queue.empty())
+    {
+        while (ws_upload_replay* item = g_replay_upload_queue.front())
+        {
+            FILE* fp = fopen(item->filepath, "rb");
+            if (!fp)
+            {
+                kz_log(&g_replay_upload_log, "[Upload] fopen failure:", strerror(errno));
+                g_replay_upload_queue.pop();
+                continue;
+            }
+
+            const size_t max_data_per_chunk = (CHUNK_SIZE - sizeof(ws_upload_chunk_header));
+            fseek(fp, 0, SEEK_END);
+            uint32_t total_chunks = (ftell(fp) + (max_data_per_chunk - 1)) / max_data_per_chunk;
+            rewind(fp);
+
+            if (kz_api_log_upload->value > 0.0f)
+            {
+                kz_log(&g_replay_upload_log, "[Upload] Starting: (rec_id: %llu) - (%u chunks)", item->rec_id, total_chunks);
+            }
+
+            ws_upload_chunk_header* header = nullptr;
+
+            char buffer[CHUNK_SIZE];
+            char* data_ptr = buffer + sizeof(ws_upload_chunk_header);
+            size_t bytes = 0;
+
+            auto last_log_time = std::chrono::steady_clock::now();
+            for (uint32_t i = 0; i < total_chunks; ++i)
+            {
+                bytes = fread(data_ptr, 1, max_data_per_chunk, fp);
+                if (bytes > 0)
+                {
+                    header = reinterpret_cast<ws_upload_chunk_header*>(buffer);
+                    memset(header, 0, sizeof(*header));
+
+                    header->rec_id         = item->rec_id;
+                    header->chunk_index    = i;
+                    header->chunk_checksum = UTIL_CRC32(data_ptr, bytes);
+                    memcpy(header->local_uid, item->local_uid, sizeof(header->local_uid));
+
+                    g_websocket.sendBinary(std::string(buffer, sizeof(*header) + bytes));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+                if (kz_api_log_upload->value > 0.0f)
+                {
+                    auto now     = std::chrono::steady_clock::now();
+                    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_log_time).count();
+                    if (elapsed > 1 || i == (total_chunks - 1))
+                    {
+                        float p = (static_cast<float>(i + 1) / static_cast<float>(total_chunks)) * 100.0f;
+                        kz_log(&g_replay_upload_log, "[Upload] (rec_id: %llu): %u/%u chunks (%0.1f%%) complete.", item->rec_id, (i + 1), total_chunks, p);
+                        last_log_time = now;
+                    }
+                }
+            }
+            g_replay_upload_queue.pop();
+            fclose(fp);
+        }
+        {
+            std::unique_lock<std::mutex> lock(g_replay_upload_mtx);
+            g_replay_upload_cv.wait(lock, []{ return (!g_replay_upload_queue.empty() || !g_krp_running.load()); });
+        }
+    }
 }

@@ -112,8 +112,10 @@ void kz_ac_querycvar_result(const edict_t* pEdict, int requestId, const char* cv
     }
 
     size_t index = static_cast<size_t>(uid & 0x3F);
-    assert(index < g_player_cvars_size);
-    assert(FStrEq(g_player_cvars[index].name, cvar));
+    if (index < g_player_cvars_size || index >= g_player_cvars_size || !FStrEq(g_player_cvars[index].name, cvar))
+    {
+        return;
+    }
 
     int id = indexOfEdict(pEdict);
 

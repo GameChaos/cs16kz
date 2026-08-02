@@ -149,8 +149,13 @@ static cell AMX_NATIVE_CALL kz_api_run_paused(AMX* amx, cell* params)
         return 0;
     }
 
-    int id = validate_player(amx, params[1]);
-    return (id ? kz_rp_run_paused(id) : 0);
+    int id = params[1];
+    if (id < 1 || id > gpGlobals->maxClients)
+    {
+        MF_LogError(amx, AMX_ERR_NATIVE, "Invalid player index %d", id);
+        return 0;
+    }
+    return kz_rp_run_paused(id);
 }
 
 /* native kz_api_run_unpaused(id) */

@@ -30,6 +30,12 @@ extern float g_wait_after_load;
         } \
     } while(0)
 
+static const char* kz_json_dot_string(JSON_Object* obj, const char* key)
+{
+    const char* value = json_object_dotget_string(obj, key);
+    return value ? value : "";
+}
+
 std::mutex g_active_uploads_mtx;
 std::set<std::string> g_active_uploads;
 
@@ -745,7 +751,7 @@ std::function<void()> kz_ws_ack_map_info(JSON_Object* obj)
     ACK_CHECK_MISSING(data.map_name);
 
     char szMap[64];
-    snprintf(szMap, sizeof(szMap), "%s", json_object_dotget_string(obj, "data.map_name"));
+    snprintf(szMap, sizeof(szMap), "%s", kz_json_dot_string(obj, "data.map_name"));
 
     char szWR_Pro[128]  = {0};
     char szWR_Noob[128] = {0};
@@ -816,13 +822,15 @@ std::function<void()> kz_ws_ack_player_join(JSON_Object* obj)
 
     bool is_banned = json_object_dotget_boolean(obj, "data.is_banned") != 0;
 
-    char szAuth[35] = {0};
-    snprintf(szAuth, sizeof(szAuth), "%s", json_object_dotget_string(obj, "data.steamid"));
-
-    if (!szAuth[0])
+    const char* steamid = json_object_dotget_string(obj, "data.steamid");
+    if (!steamid || !steamid[0])
     {
         return nullptr;
     }
+
+    char szAuth[35] = {0};
+    snprintf(szAuth, sizeof(szAuth), "%s", steamid);
+
     return [szAuth, is_banned]() {
         edict_t* pEntity = find_player_by_authid(szAuth);
         if (!FNullEnt(pEntity) && is_banned)
@@ -1033,13 +1041,13 @@ std::function<void()> kz_ws_ack_get_replay(JSON_Object* obj)
     if (!json_object_dotget_value(obj, "data.url"))
     {
         kz_log(&g_ws_log, "[kz_ws_ack_get_replay] Error: missing data.url.");
-        kz_ws_clear_replay_fetch_pending(map_name);
+        kz_ws_clear_replay_fetch_pending(map_name ? map_name : "");
         return nullptr;
     }
     if (!json_object_dotget_value(obj, "data.local_uid"))
     {
         kz_log(&g_ws_log, "[kz_ws_ack_get_replay] Error: missing data.local_uid.");
-        kz_ws_clear_replay_fetch_pending(map_name);
+        kz_ws_clear_replay_fetch_pending(map_name ? map_name : "");
         return nullptr;
     }
     if (!json_object_dotget_value(obj, "data.map_name"))
@@ -1054,7 +1062,7 @@ std::function<void()> kz_ws_ack_get_replay(JSON_Object* obj)
 
     if (!url || !local_uid || !map_name)
     {
-        kz_ws_clear_replay_fetch_pending(map_name);
+        kz_ws_clear_replay_fetch_pending(map_name ? map_name : "");
         return nullptr;
     }
     if (!kz_ws_valid_replay_segment(map_name) || !kz_ws_valid_replay_segment(local_uid))

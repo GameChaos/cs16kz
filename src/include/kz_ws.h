@@ -114,6 +114,7 @@ extern std::function<void()> kz_ws_ack_get_replay(JSON_Object* obj);
 extern std::function<void()> kz_ws_ack_del_record_notify(JSON_Object* obj);
 
 extern void kz_ws_try_fetch_replay(const char* mapname);
+extern bool kz_ws_valid_replay_segment(const char* value);
 extern void kz_ws_delete_record_replay(const char* mapname, const char* local_uid);
 
 #endif

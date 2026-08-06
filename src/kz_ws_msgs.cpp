@@ -41,7 +41,7 @@ static void kz_ws_clear_replay_fetch_pending(const char* mapname)
 
 static constexpr size_t KZ_MAX_REPLAY_DOWNLOAD_BYTES = 104857600ULL;
 
-static bool kz_ws_valid_replay_segment(const char* value)
+bool kz_ws_valid_replay_segment(const char* value)
 {
     if (!value || !value[0])
     {
@@ -87,6 +87,12 @@ static void kz_ws_reset_bot_if_playing(const std::filesystem::path& path)
 
 void kz_ws_delete_record_replay(const char* mapname, const char* local_uid)
 {
+    if (!mapname || !local_uid || !mapname[0] || !local_uid[0]
+        || !kz_ws_valid_replay_segment(mapname) || !kz_ws_valid_replay_segment(local_uid))
+    {
+        return;
+    }
+
     kz_ws_delete_replay_files(local_uid, mapname);
 
     if (mapname && local_uid)

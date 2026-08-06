@@ -221,6 +221,11 @@ static cell AMX_NATIVE_CALL kz_api_del_record(AMX* amx, cell* params)
     MF_GetAmxString(amx, params[1], 0, mapname, sizeof(mapname) - 1);
     MF_GetAmxString(amx, params[2], 1, local_uid, sizeof(local_uid) - 1);
 
+    if (!kz_ws_valid_replay_segment(mapname) || !kz_ws_valid_replay_segment(local_uid))
+    {
+        return 0;
+    }
+
     kz_ws_delete_record_replay(mapname, local_uid);
     return 1;
 }

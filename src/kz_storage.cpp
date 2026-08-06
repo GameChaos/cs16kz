@@ -37,22 +37,21 @@ void kz_storage_init(void)
 {
     static thread_local storage_log_registration s_log_registration;
 
-    if(!kz_storage_initialized)
+    if (!kz_storage_initialized)
     {
         std::filesystem::path dir = g_data_dir / "kz_global" / "sqlite3";
-        if (!std::filesystem::exists(dir))
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        if (ec)
         {
-            std::error_code ec;
-            if (std::filesystem::create_directories(dir, ec))
-            {
-                kz_log(&g_storage_log, "Directory created: %s", std::filesystem::relative(dir, g_data_dir).string().c_str());
-            }
-            else
-            {
-                kz_log(&g_storage_log, "Failed to create directory (%s): %s", std::filesystem::relative(dir, g_data_dir).string().c_str(), ec.message().c_str());
-                return;
-            }
+            kz_log(&g_storage_log, "Failed to create directory (%s): %s",
+                std::filesystem::relative(dir, g_data_dir).string().c_str(), ec.message().c_str());
+            return;
         }
+    }
+    if (kz_storage_initialized && kz_storage_database)
+    {
+        return;
     }
     try
     {
@@ -68,6 +67,12 @@ void kz_storage_init(void)
     catch (const std::exception& e)
     {
         kz_log(&g_storage_log, "[Storage] init: %s", e.what());
+        if (kz_storage_database)
+        {
+            delete kz_storage_database;
+            kz_storage_database = nullptr;
+        }
+        kz_storage_initialized = false;
     }
 }
 void kz_storage_uninit(void)
@@ -84,9 +89,15 @@ void kz_storage_load()
     std::lock_guard<std::mutex> lock(g_retry_mtx);
     g_retry_queue.clear();
 
-    kz_storage_database->exec("PRAGMA wal_checkpoint(TRUNCATE);");
+    if (!kz_storage_database)
+    {
+        kz_log(&g_storage_log, "[Storage] load skipped: database not initialized");
+        return;
+    }
+
     try
     {
+        kz_storage_database->exec("PRAGMA wal_checkpoint(TRUNCATE);");
         SQLite::Statement outgoing(*kz_storage_database, "SELECT id, msg_type, msg, created_at FROM outgoing_queue");
         SQLite::Statement upload(*kz_storage_database, "SELECT id, msg_type, local_uid, created_at FROM upload_queue");
 

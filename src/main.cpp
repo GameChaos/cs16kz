@@ -390,16 +390,13 @@ void KZ_SV_DropClient(edict_t* client)
 }
 /***************************************************************************************************************/
 /***************************************************************************************************************/
-void RH_SV_DropClient(IRehldsHook_SV_DropClient* chain, IGameClient* cl, bool crash, const char* format)
+void RH_SV_DropClient(IRehldsHook_SV_DropClient* chain, IGameClient* cl, bool crash, const char* reason)
 {
     KZ_SV_DropClient(cl->GetEdict());
 
-    // https://github.com/alliedmodders/amxmodx/blob/master/amxmodx/meta_api.cpp#998
-    //
-    char buffer[1024];
-    ke::SafeStrcpy(buffer, sizeof(buffer), format);
-    chain->callNext(cl, crash, buffer);
-
+    // ReHLDS expands fmt/args with Q_vsnprintf before invoking hooks (host.cpp SV_DropClient).
+    // The hook receives the final message, not a printf format string — pass it through unchanged.
+    chain->callNext(cl, crash, reason ? reason : "");
 }
 void DT_SV_DropClient(client_t* cl, qboolean crash, const char* format, ...)
 {

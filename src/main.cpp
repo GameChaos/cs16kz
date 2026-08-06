@@ -370,11 +370,6 @@ void KZ_Cvar_DirectSet(cvar_t* var, const char* const value, IRehldsHook_Cvar_Di
 }
 void KZ_SV_DropClient(edict_t* client)
 {
-    if (g_early_mapchange)
-    {
-        return;
-    }
-
     int id = indexOfEdict(client);
     if (id <= 0 || id > gpGlobals->maxClients)
     {
@@ -386,6 +381,12 @@ void KZ_SV_DropClient(edict_t* client)
     }
 
     kz_ws_event_client_disconnect(client);
+
+    if (g_early_mapchange)
+    {
+        return;
+    }
+
     memset(&g_players[id], 0, sizeof(g_players[0]));
 }
 /***************************************************************************************************************/

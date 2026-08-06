@@ -92,7 +92,7 @@ extern void kz_rp_update_header(void);
 extern void kz_rp_prune_replays(const char* mapname, kz::queue<log_entry>* log_queue);
 extern void kz_rp_set_cmd(int id, const usercmd_t* cmd);
 extern void kz_rp_set_vars(int id, const entvars_t* vars);
-extern void kz_rp_compress_and_upload_async(ws_upload upr);
+extern bool kz_rp_compress_and_upload_async(ws_upload upr);
 extern void kz_rp_write_frame(int id);
 
 extern bool kz_rp_compress_replay(const std::filesystem::path& file);

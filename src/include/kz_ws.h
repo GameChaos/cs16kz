@@ -88,6 +88,7 @@ extern kz::queue<std::function<void()>> g_incoming_queue;
 
 extern std::mutex g_active_uploads_mtx;
 extern std::set<std::string> g_active_uploads;
+extern void kz_ws_release_active_upload(const char* local_uid);
 
 extern void kz_ws_init(void);
 extern void kz_ws_uninit(void);

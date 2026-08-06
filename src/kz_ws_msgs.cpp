@@ -33,6 +33,16 @@ extern float g_wait_after_load;
 std::mutex g_active_uploads_mtx;
 std::set<std::string> g_active_uploads;
 
+void kz_ws_release_active_upload(const char* local_uid)
+{
+    if (!local_uid || !local_uid[0])
+    {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_active_uploads_mtx);
+    g_active_uploads.erase(local_uid);
+}
+
 static std::mutex g_replay_fetch_mtx;
 static std::set<std::string> g_replay_fetch_pending;
 
@@ -451,7 +461,11 @@ static bool kz_ws_requeue_replay_upload(const char* local_uid)
 
     auto shared_uid = std::make_shared<std::string>(local_uid);
     kz_storage_save(shared_uid, 0, kz_storage_get_next_id(StorageTable::upload_queue), StorageTable::upload_queue);
-    kz_rp_compress_and_upload_async(metadata);
+    if (!kz_rp_compress_and_upload_async(metadata))
+    {
+        kz_ws_release_active_upload(local_uid);
+        return false;
+    }
     return true;
 }
 
@@ -548,7 +562,10 @@ void kz_ws_run_tasks(int max_tasks_per_frame)
                             {
                                 kz_log(nullptr, "[UPLOAD] Retry (%d): %s", it->retry_count + 1, std::filesystem::relative(replay, g_data_dir).string().c_str());
                             }
-                            kz_rp_compress_and_upload_async(metadata);
+                            if (!kz_rp_compress_and_upload_async(metadata))
+                            {
+                                g_active_uploads.erase(*(it->message));
+                            }
                         }
                         else
                         {
@@ -854,7 +871,10 @@ std::function<void()> kz_ws_ack_record_ack(JSON_Object* obj)
 
         kz_storage_save(shared_msg, 0, kz_storage_get_next_id(StorageTable::upload_queue), StorageTable::upload_queue);
         return [metadata]() {
-                kz_rp_compress_and_upload_async(metadata);
+                if (!kz_rp_compress_and_upload_async(metadata))
+                {
+                    kz_ws_release_active_upload(metadata.local_uid);
+                }
             };
     }
     else

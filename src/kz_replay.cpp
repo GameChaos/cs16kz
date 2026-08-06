@@ -353,16 +353,15 @@ void kz_rp_write_frame(int id)
         g_replay_writer_cv.notify_one();
     }
 }
-void kz_rp_compress_and_upload_async(ws_upload upr)
+bool kz_rp_compress_and_upload_async(ws_upload upr)
 {
     if (!g_replay_upload_queue.try_push(upr))
     {
         kz_log(nullptr, "[KRP] The queue is full");
+        return false;
     }
-    else
-    {
-        g_replay_upload_cv.notify_one();
-    }
+    g_replay_upload_cv.notify_one();
+    return true;
 }
 /***************************************************************************************************************/
 /***************************************************************************************************************/
@@ -922,6 +921,7 @@ static void kz_rp_upload_thread(void)
                 if (!fp)
                 {
                     kz_log(&g_replay_upload_log, "[UPLOAD] Failed to compress file: %s", std::filesystem::relative(pathname, g_data_dir).string().c_str());
+                    kz_ws_release_active_upload(item->local_uid);
                     g_replay_upload_queue.pop();
                     continue;
                 }
@@ -929,6 +929,7 @@ static void kz_rp_upload_thread(void)
             if (!fp)
             {
                 kz_log(&g_replay_upload_log, "[UPLOAD] fopen failure: %s", strerror(errno));
+                kz_ws_release_active_upload(item->local_uid);
                 g_replay_upload_queue.pop();
                 continue;
             }

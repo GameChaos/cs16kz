@@ -59,3 +59,13 @@ native kz_api_run_checkpoint(id);
  * Notifies the API that a player teleported to his last checkpoint.
  */
 native kz_api_run_gocheck(id);
+
+/**
+ * Requests the WR replay for a map from the API (GET_REPLAY).
+ */
+native kz_api_get_replay(mapname[]);
+
+/**
+ * Deletes local replay files for a record (same as DEL_RECORD_NOTIFY handler).
+ */
+native kz_api_del_record(mapname[], local_uid[]);

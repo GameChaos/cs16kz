@@ -211,13 +211,30 @@ static cell AMX_NATIVE_CALL kz_api_run_finished(AMX* amx, cell* params)
 
 static cell AMX_NATIVE_CALL kz_api_del_record(AMX* amx, cell* params)
 {
-    MF_LogError(amx, AMX_ERR_NATIVE, "Not implemented.");
+    if (!validate_active(amx) || !validate_params(amx, params, 2))
+    {
+        return 0;
+    }
+
+    char mapname[64] = {0};
+    char local_uid[64] = {0};
+    MF_GetAmxString(amx, params[1], 0, mapname, sizeof(mapname) - 1);
+    MF_GetAmxString(amx, params[2], 1, local_uid, sizeof(local_uid) - 1);
+
+    kz_ws_delete_record_replay(mapname, local_uid);
     return 1;
 }
 
 static cell AMX_NATIVE_CALL kz_api_get_replay(AMX* amx, cell* params)
 {
-    MF_LogError(amx, AMX_ERR_NATIVE, "Not implemented.");
+    if (!validate_active(amx) || !validate_params(amx, params, 1))
+    {
+        return 0;
+    }
+
+    char mapname[64] = {0};
+    MF_GetAmxString(amx, params[1], 0, mapname, sizeof(mapname) - 1);
+    kz_ws_try_fetch_replay(mapname);
     return 1;
 }
 

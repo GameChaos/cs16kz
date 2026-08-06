@@ -27,6 +27,7 @@ namespace WSMsgOut {
     constexpr int PLAYER_LEAVE   = 4;
     constexpr int WANT_MAP_INFO  = 5;
     constexpr int ADD_RECORD     = 8;
+    constexpr int GET_REPLAY     = 9;
 }
 
 // Inbound (API → plugin) message types
@@ -38,6 +39,8 @@ namespace WSMsgIn {
     constexpr int RECORD_ACK     = 105;
     constexpr int FILE_ACK       = 106;
     constexpr int WR_BROADCAST   = 107;
+    constexpr int GET_REPLAY_ACK = 108;
+    constexpr int DEL_RECORD_NOTIFY = 109;
     constexpr int ERROR_MSG      = 199;
 }
 
@@ -107,5 +110,10 @@ extern std::function<void()> kz_ws_ack_player_join(JSON_Object* obj);
 extern std::function<void()> kz_ws_ack_record_ack(JSON_Object* obj);
 extern std::function<void()> kz_ws_ack_file_ack(JSON_Object* obj);
 extern std::function<void()> kz_ws_ack_error(JSON_Object* obj);
+extern std::function<void()> kz_ws_ack_get_replay(JSON_Object* obj);
+extern std::function<void()> kz_ws_ack_del_record_notify(JSON_Object* obj);
+
+extern void kz_ws_try_fetch_replay(const char* mapname);
+extern void kz_ws_delete_record_replay(const char* mapname, const char* local_uid);
 
 #endif

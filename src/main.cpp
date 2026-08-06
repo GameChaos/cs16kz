@@ -57,6 +57,8 @@ void FN_AMXX_ATTACH()
     kz_ws_register(WSMsgOut::PLAYER_JOIN,   kz_ws_ack_player_join); // API echoes type 3 as the join ACK
     kz_ws_register(WSMsgIn::RECORD_ACK,     kz_ws_ack_record_ack);
     kz_ws_register(WSMsgIn::FILE_ACK,       kz_ws_ack_file_ack);
+    kz_ws_register(WSMsgIn::GET_REPLAY_ACK, kz_ws_ack_get_replay);
+    kz_ws_register(WSMsgIn::DEL_RECORD_NOTIFY, kz_ws_ack_del_record_notify);
     kz_ws_register(WSMsgIn::ERROR_MSG,      kz_ws_ack_error);
 
     kz_api_url      = register_cvar("kz_api_url",  "wss://api.kreedz.com/ws/game", FCVAR_EXTDLL | FCVAR_PROTECTED | FCVAR_SPONLY);

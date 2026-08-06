@@ -353,6 +353,7 @@ static const char* kz_storage_msg_type_name(int64_t type)
         case WSMsgOut::PLAYER_LEAVE:  return "player_leave";
         case WSMsgOut::WANT_MAP_INFO: return "want_map_info";
         case WSMsgOut::ADD_RECORD:    return "add_record";
+        case WSMsgOut::GET_REPLAY:    return "get_replay";
     }
     return "?";
 }

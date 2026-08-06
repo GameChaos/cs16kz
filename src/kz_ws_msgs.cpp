@@ -11,6 +11,9 @@
 #include "kz_natives.h"
 
 #include <filesystem>
+#include <ixwebsocket/IXHttpClient.h>
+#include <thread>
+#include <vector>
 
 #define ACK_CHECK_MISSING(X) \
     do { \
@@ -22,6 +25,181 @@
 
 std::mutex g_active_uploads_mtx;
 std::set<std::string> g_active_uploads;
+
+static std::mutex g_replay_fetch_mtx;
+static std::set<std::string> g_replay_fetch_pending;
+
+static constexpr size_t KZ_MAX_REPLAY_DOWNLOAD_BYTES = 104857600ULL;
+
+static bool kz_ws_valid_replay_segment(const char* value)
+{
+    if (!value || !value[0])
+    {
+        return false;
+    }
+    for (const char* p = value; *p; ++p)
+    {
+        const char c = *p;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.'))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool kz_ws_has_zstd_magic(const uint8_t* data, size_t len)
+{
+    return len >= 4 && data[0] == 0x28 && data[1] == 0xB5 && data[2] == 0x2F && data[3] == 0xFD;
+}
+
+static void kz_ws_reset_bot_if_playing(const std::filesystem::path& path)
+{
+    if (!g_pb_bot_data)
+    {
+        return;
+    }
+    if (g_pb_bot_data->filepath != path)
+    {
+        return;
+    }
+    if (g_pb_bot_id)
+    {
+        edict_t* bot = edictByIndex(g_pb_bot_id);
+        if (!FNullEnt(bot))
+        {
+            REMOVE_ENTITY(bot);
+        }
+    }
+    g_pb_bot_id = 0;
+    g_pb_bot_data = nullptr;
+}
+
+void kz_ws_delete_record_replay(const char* mapname, const char* local_uid)
+{
+    kz_ws_delete_replay_files(local_uid, mapname);
+
+    if (mapname && local_uid)
+    {
+        std::filesystem::path path = g_data_dir / "kz_global" / "replays" / mapname / local_uid;
+        path.replace_extension(".krpz");
+        kz_ws_reset_bot_if_playing(path);
+    }
+}
+
+void kz_ws_try_fetch_replay(const char* mapname)
+{
+    if (!mapname || !mapname[0] || !kz_ws_valid_replay_segment(mapname))
+    {
+        return;
+    }
+    if (g_websocket_state.load() != WSState::Connected)
+    {
+        return;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(g_replay_fetch_mtx);
+        if (g_replay_fetch_pending.find(mapname) != g_replay_fetch_pending.end())
+        {
+            return;
+        }
+        if (!kz_pb_find_fastest(mapname).empty())
+        {
+            return;
+        }
+        g_replay_fetch_pending.insert(mapname);
+    }
+
+    JSON_Value* data_val = json_value_init_object();
+    JSON_Object* data_obj = json_value_get_object(data_val);
+    json_object_set_string(data_obj, "map_name", mapname);
+
+    std::string message;
+    int64_t msg_id = kz_storage_get_next_id(StorageTable::outgoing_queue);
+    kz_ws_build_msg(WSMsgOut::GET_REPLAY, data_val, message, msg_id);
+
+    auto shared_msg = std::make_shared<std::string>(std::move(message));
+    kz_storage_save(shared_msg, WSMsgOut::GET_REPLAY, msg_id, StorageTable::outgoing_queue);
+    kz_ws_queue_msg(shared_msg, msg_id);
+}
+
+static void kz_ws_download_replay_async(std::string url, std::string mapname, std::string local_uid)
+{
+    std::thread([url = std::move(url), mapname = std::move(mapname), local_uid = std::move(local_uid)]() {
+        std::vector<uint8_t> body;
+        bool ok = false;
+
+        if (url.rfind("https://", 0) == 0)
+        {
+            ix::HttpClient client;
+            client.setFollowRedirects(false);
+            auto response = client.get(url);
+            if (response && response->errorCode.ok() && response->statusCode == 200)
+            {
+                const auto& payload = response->body;
+                if (payload.size() <= KZ_MAX_REPLAY_DOWNLOAD_BYTES && kz_ws_has_zstd_magic(
+                        reinterpret_cast<const uint8_t*>(payload.data()), payload.size()))
+                {
+                    body.assign(payload.begin(), payload.end());
+                    ok = true;
+                }
+            }
+        }
+
+        if (!g_incoming_queue.try_push([ok, body = std::move(body), mapname, local_uid]() mutable {
+            {
+                std::lock_guard<std::mutex> lock(g_replay_fetch_mtx);
+                g_replay_fetch_pending.erase(mapname);
+            }
+
+            if (!ok)
+            {
+                kz_log(&g_ws_log, "[GET_REPLAY] Download failed for map=%s uid=%s", mapname.c_str(), local_uid.c_str());
+                return;
+            }
+
+            if (!FStrEq(mapname.c_str(), STRING(gpGlobals->mapname)))
+            {
+                return;
+            }
+
+            std::filesystem::path out_path = g_data_dir / "kz_global" / "replays" / mapname / local_uid;
+            out_path.replace_extension(".krpz");
+
+            std::error_code ec;
+            std::filesystem::create_directories(out_path.parent_path(), ec);
+            if (ec)
+            {
+                kz_log(&g_ws_log, "[GET_REPLAY] Failed to create directory: %s", ec.message().c_str());
+                return;
+            }
+
+            FILE* fp = fopen(out_path.string().c_str(), "wb");
+            if (!fp)
+            {
+                kz_log(&g_ws_log, "[GET_REPLAY] Failed to write replay: %s", out_path.string().c_str());
+                return;
+            }
+            const size_t written = fwrite(body.data(), 1, body.size(), fp);
+            fclose(fp);
+
+            if (written != body.size())
+            {
+                std::filesystem::remove(out_path, ec);
+                kz_log(&g_ws_log, "[GET_REPLAY] Incomplete write for %s", local_uid.c_str());
+                return;
+            }
+
+            kz_log(&g_ws_log, "[GET_REPLAY] Saved replay: %s", std::filesystem::relative(out_path, g_data_dir).string().c_str());
+            kz_pb_parse_file_async(out_path);
+        }))
+        {
+            std::lock_guard<std::mutex> lock(g_replay_fetch_mtx);
+            g_replay_fetch_pending.erase(mapname);
+        }
+    }).detach();
+}
 
 static void kz_ws_delete_replay_files(const char* local_uid, const char* mapname)
 {
@@ -410,6 +588,8 @@ std::function<void()> kz_ws_ack_map_info(JSON_Object* obj)
             snprintf(g_current_map_info.szWR_Noob, sizeof(szWR_Noob), "%s", szWR_Noob);
 
             g_current_map_info.updated = true;
+
+            kz_ws_try_fetch_replay(szMap);
         }
         else
         {
@@ -605,5 +785,52 @@ std::function<void()> kz_ws_ack_file_ack(JSON_Object* obj)
     kz_log(&g_ws_log, "[ACK] Upload rejected for uid=%s", local_uid);
     return [uid = std::string(local_uid)]() {
         kz_ws_requeue_replay_upload(uid.c_str());
+    };
+}
+
+std::function<void()> kz_ws_ack_get_replay(JSON_Object* obj)
+{
+    ACK_CHECK_MISSING(data.url);
+    ACK_CHECK_MISSING(data.local_uid);
+    ACK_CHECK_MISSING(data.map_name);
+
+    const char* url = json_object_dotget_string(obj, "data.url");
+    const char* local_uid = json_object_dotget_string(obj, "data.local_uid");
+    const char* map_name = json_object_dotget_string(obj, "data.map_name");
+
+    if (!url || !local_uid || !map_name)
+    {
+        return nullptr;
+    }
+    if (!kz_ws_valid_replay_segment(map_name) || !kz_ws_valid_replay_segment(local_uid))
+    {
+        kz_log(&g_ws_log, "[GET_REPLAY_ACK] Invalid map_name or local_uid.");
+        return nullptr;
+    }
+
+    kz_ws_download_replay_async(url, map_name, local_uid);
+    return nullptr;
+}
+
+std::function<void()> kz_ws_ack_del_record_notify(JSON_Object* obj)
+{
+    const char* record_id = json_object_dotget_string(obj, "data.record_id");
+    const char* map_name = json_object_dotget_string(obj, "data.map_name");
+    const char* local_uid = json_object_dotget_string(obj, "data.local_uid");
+
+    if (!map_name || !local_uid)
+    {
+        kz_log(&g_ws_log, "[DEL_RECORD_NOTIFY] Missing map_name or local_uid.");
+        return nullptr;
+    }
+    if (!kz_ws_valid_replay_segment(map_name) || !kz_ws_valid_replay_segment(local_uid))
+    {
+        kz_log(&g_ws_log, "[DEL_RECORD_NOTIFY] Invalid map_name or local_uid.");
+        return nullptr;
+    }
+
+    return [map = std::string(map_name), uid = std::string(local_uid), rid = std::string(record_id ? record_id : "")]() {
+        kz_log(&g_ws_log, "[DEL_RECORD_NOTIFY] record=%s map=%s uid=%s", rid.c_str(), map.c_str(), uid.c_str());
+        kz_ws_delete_record_replay(map.c_str(), uid.c_str());
     };
 }

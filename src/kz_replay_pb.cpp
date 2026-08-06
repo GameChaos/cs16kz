@@ -13,6 +13,7 @@
 
 #include "krp_codec.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <limits>
 
@@ -81,6 +82,25 @@ void kz_pb_reload_sr_bot(const char* mapname)
     }
 }
 
+void kz_pb_drop_parsed_replay(const std::filesystem::path& path)
+{
+    if (path.empty())
+    {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(g_pb_data_mtx);
+    g_pb_data.erase(
+        std::remove_if(g_pb_data.begin(), g_pb_data.end(),
+            [&path](const krp_playback& pb) { return pb.filepath == path; }),
+        g_pb_data.end());
+
+    if (g_pb_data.empty())
+    {
+        g_pb_pending_data.store(false);
+    }
+}
+
 void kz_pb_init(void)
 {
     kz_log_addq(&g_pb_parse_log);
@@ -130,41 +150,47 @@ void kz_pb_frame(void)
         std::lock_guard<std::mutex> lock(g_pb_data_mtx);
         g_pb_pending_data.store(false);
 
-        if (!g_pb_data.empty())
+        while (!g_pb_data.empty())
         {
             const auto& entry = g_pb_data.back();
-            if (FStrEq(STRING(gpGlobals->mapname), entry.header.map.name))
+            std::error_code ec;
+            if ((!std::filesystem::exists(entry.filepath, ec) || ec)
+                || !FStrEq(STRING(gpGlobals->mapname), entry.header.map.name))
             {
-                g_current_playback = std::move(g_pb_data.back());
-                g_pb_bot_data = &g_current_playback;
-
-                g_pb_bot_data->use_cmd = static_cast<bool>(kz_api_bot_use_cmd->value);
-                g_pb_bot_data->double_speed = false;
-
-                g_pb_bot_data->use_count = 0;
-                g_pb_bot_data->plr_sound = 0;
-                g_pb_bot_data->step_left = 0;
-                g_pb_bot_data->team      = static_cast<int>(kz_api_bot_team->value);
-
-                g_pb_bot_data->delay_counter = 0;
-                g_pb_bot_data->frame_counter = 0;
-                g_pb_bot_data->finish_frame  = g_pb_bot_data->frames.size() - 1;
-
-                char szNickname[32];
-                snprintf(szNickname, sizeof(szNickname), "%s[%s] %s", kz_api_bot_prefix->string, g_pb_bot_data->timer_str, g_pb_bot_data->header.player.name);
-
-                if (g_pb_bot_id)
-                {
-                    g_pb_bot_ent->v.nextthink = gpGlobals->time + 0.01f;
-                    ENTITY_SET_KEYVALUE(edictByIndex(g_pb_bot_id), "name", szNickname);
-                }
-                else
-                {
-                    kz_bot_create(szNickname);
-                }
+                g_pb_data.pop_back();
+                continue;
             }
-            g_pb_data.clear();
+
+            g_current_playback = std::move(g_pb_data.back());
+            g_pb_bot_data = &g_current_playback;
+
+            g_pb_bot_data->use_cmd = static_cast<bool>(kz_api_bot_use_cmd->value);
+            g_pb_bot_data->double_speed = false;
+
+            g_pb_bot_data->use_count = 0;
+            g_pb_bot_data->plr_sound = 0;
+            g_pb_bot_data->step_left = 0;
+            g_pb_bot_data->team      = static_cast<int>(kz_api_bot_team->value);
+
+            g_pb_bot_data->delay_counter = 0;
+            g_pb_bot_data->frame_counter = 0;
+            g_pb_bot_data->finish_frame  = g_pb_bot_data->frames.size() - 1;
+
+            char szNickname[32];
+            snprintf(szNickname, sizeof(szNickname), "%s[%s] %s", kz_api_bot_prefix->string, g_pb_bot_data->timer_str, g_pb_bot_data->header.player.name);
+
+            if (g_pb_bot_id)
+            {
+                g_pb_bot_ent->v.nextthink = gpGlobals->time + 0.01f;
+                ENTITY_SET_KEYVALUE(edictByIndex(g_pb_bot_id), "name", szNickname);
+            }
+            else
+            {
+                kz_bot_create(szNickname);
+            }
+            break;
         }
+        g_pb_data.clear();
     }
 }
 void kz_pb_server_deactivate_post(void)
@@ -666,13 +692,22 @@ void kz_pb_parser_thread(void)
             }
             if (rsize > 1)
             {
-                std::lock_guard<std::mutex> lock(g_pb_data_mtx);
-                kz_log(&g_pb_parse_log, "[PARSE] Loaded %zu frames from replay: %s/%s", pb_data.frames.size(), file->parent_path().filename().string().c_str(), file->filename().string().c_str());
+                std::error_code ec;
+                if (!std::filesystem::exists(pb_data.filepath, ec) || ec)
+                {
+                    kz_log(&g_pb_parse_log, "[PARSE] Discarding replay deleted during parse: %s",
+                        std::filesystem::relative(pb_data.filepath, g_data_dir).string().c_str());
+                }
+                else
+                {
+                    std::lock_guard<std::mutex> lock(g_pb_data_mtx);
+                    kz_log(&g_pb_parse_log, "[PARSE] Loaded %zu frames from replay: %s/%s", pb_data.frames.size(), file->parent_path().filename().string().c_str(), file->filename().string().c_str());
 
-                g_pb_data.push_back(std::move(pb_data));
-                g_pb_data.shrink_to_fit();
+                    g_pb_data.push_back(std::move(pb_data));
+                    g_pb_data.shrink_to_fit();
 
-                g_pb_pending_data.store(true);
+                    g_pb_pending_data.store(true);
+                }
             }
             else
             {

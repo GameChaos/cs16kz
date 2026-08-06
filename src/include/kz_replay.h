@@ -110,4 +110,5 @@ extern void kz_pb_parse_file_async(std::filesystem::path file);
 extern std::string kz_rp_mapname_from_header(FILE* fp);
 extern std::filesystem::path kz_pb_find_fastest(const char* mapname);
 extern void kz_pb_reload_sr_bot(const char* mapname);
+extern void kz_pb_drop_parsed_replay(const std::filesystem::path& path);
 #endif

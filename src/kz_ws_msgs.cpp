@@ -273,12 +273,10 @@ void kz_ws_delete_record_replay(const char* mapname, const char* local_uid)
 
     kz_ws_delete_replay_files(local_uid, mapname);
 
-    if (mapname && local_uid)
-    {
-        std::filesystem::path path = g_data_dir / "kz_global" / "replays" / mapname / local_uid;
-        path.replace_extension(".krpz");
-        kz_ws_reset_bot_if_playing(path);
-    }
+    std::filesystem::path path = g_data_dir / "kz_global" / "replays" / mapname / local_uid;
+    path.replace_extension(".krpz");
+    kz_pb_drop_parsed_replay(path);
+    kz_ws_reset_bot_if_playing(path);
 
     kz_pb_reload_sr_bot(mapname);
 }

@@ -18,6 +18,7 @@
 #include "kz_natives.h"
 #include "kz_basic_ac.h"
 
+#include <algorithm>
 #include <filesystem>
 
 edict_t* g_pEdicts = nullptr;
@@ -494,6 +495,22 @@ bool kz_init_detours(void)
 }
 /***************************************************************************************************************/
 /***************************************************************************************************************/
+static bool kz_admin_resolve_replay_path(const char* relative, std::filesystem::path& out_file)
+{
+    if (!kz_ws_valid_replays_relative_path(relative))
+    {
+        return false;
+    }
+
+    const std::filesystem::path root = g_data_dir / "kz_global" / "replays";
+    out_file = root / relative;
+
+    const std::filesystem::path root_norm = root.lexically_normal();
+    const std::filesystem::path file_norm = out_file.lexically_normal();
+    const auto mismatch = std::mismatch(root_norm.begin(), root_norm.end(), file_norm.begin(), file_norm.end());
+    return mismatch.first == root_norm.end();
+}
+
 static void kz_api_cmd_usage()
 {
     MF_PrintSrvConsole("Usage:\n");
@@ -621,7 +638,12 @@ void kz_api_cmd(void)
         }
         else if (FStrEq(action, "load") && argc >= 4)
         {
-            std::filesystem::path file = g_data_dir / "kz_global" / "replays" / CMD_ARGV(3);
+            std::filesystem::path file;
+            if (!kz_admin_resolve_replay_path(CMD_ARGV(3), file))
+            {
+                MF_PrintSrvConsole("[%s] Invalid replay path: %s\n\n", MODULE_LOGTAG, CMD_ARGV(3));
+                return;
+            }
             if (file.extension() != ".krpz")
             {
                 MF_PrintSrvConsole("[%s] \"playback load\" expects a .krpz file \n\n", MODULE_LOGTAG);
@@ -672,7 +694,12 @@ void kz_api_cmd(void)
 
         const bool compress = FStrEq(action, "compress");
         const char* want_ext = compress ? ".krpr" : ".krpz";
-        std::filesystem::path file = g_data_dir / "kz_global" / "replays" / CMD_ARGV(3);
+        std::filesystem::path file;
+        if (!kz_admin_resolve_replay_path(CMD_ARGV(3), file))
+        {
+            MF_PrintSrvConsole("[%s] Invalid replay path: %s\n\n", MODULE_LOGTAG, CMD_ARGV(3));
+            return;
+        }
 
         if (file.extension() != want_ext)
         {

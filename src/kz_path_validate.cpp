@@ -1,6 +1,7 @@
 #include "kz_path_validate.h"
 
 #include <cstring>
+#include <filesystem>
 
 bool kz_ws_valid_replay_segment(const char* value)
 {
@@ -20,5 +21,33 @@ bool kz_ws_valid_replay_segment(const char* value)
             return false;
         }
     }
+    return true;
+}
+
+bool kz_ws_valid_replays_relative_path(const char* relative)
+{
+    if (!relative || !relative[0])
+    {
+        return false;
+    }
+
+    const std::filesystem::path rel(relative);
+    if (rel.is_absolute() || rel.has_root_name() || rel.has_root_directory())
+    {
+        return false;
+    }
+
+    for (const auto& part : rel)
+    {
+        if (part.empty() || part == "." || part == "..")
+        {
+            return false;
+        }
+        if (!kz_ws_valid_replay_segment(part.string().c_str()))
+        {
+            return false;
+        }
+    }
+
     return true;
 }

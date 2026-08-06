@@ -29,5 +29,13 @@ int run_path_validate_tests(void)
     expect(!kz_ws_valid_replay_segment("map\\name"), "backslash rejected");
     expect(!kz_ws_valid_replay_segment("map name"), "space rejected");
 
+    expect(kz_ws_valid_replays_relative_path("kz_map/0_00012345_steam_abc.krpz"), "map replay path");
+    expect(kz_ws_valid_replays_relative_path("0_00012345_steam_abc.krpz"), "flat replay path");
+    expect(!kz_ws_valid_replays_relative_path(nullptr), "null relative path");
+    expect(!kz_ws_valid_replays_relative_path(""), "empty relative path");
+    expect(!kz_ws_valid_replays_relative_path("../secret.krpz"), "parent traversal");
+    expect(!kz_ws_valid_replays_relative_path("kz_map/../../secret.krpz"), "nested traversal");
+    expect(!kz_ws_valid_replays_relative_path("/etc/passwd.krpz"), "absolute path");
+
     return g_failures;
 }

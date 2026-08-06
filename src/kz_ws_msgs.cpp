@@ -846,6 +846,11 @@ std::function<void()> kz_ws_ack_record_ack(JSON_Object* obj)
         kz_log(&g_ws_log, "[kz_ws_ack_record_ack] Empty local_uid.");
         return nullptr;
     }
+    if (!kz_ws_valid_replay_segment(local_uid))
+    {
+        kz_log(&g_ws_log, "[kz_ws_ack_record_ack] Invalid local_uid.");
+        return nullptr;
+    }
 
     ws_upload metadata = {};
     metadata.id = 0;
@@ -894,7 +899,18 @@ std::function<void()> kz_ws_ack_file_ack(JSON_Object* obj)
     char local_uid[64] = {0};
     bool status = json_object_dotget_boolean(obj, "data.status") != 0;
 
-    snprintf(local_uid, sizeof(local_uid), "%s", json_object_dotget_string(obj, "data.local_uid"));
+    const char* uid_ptr = json_object_dotget_string(obj, "data.local_uid");
+    if (!uid_ptr || !uid_ptr[0])
+    {
+        kz_log(&g_ws_log, "[kz_ws_ack_file_ack] Empty local_uid.");
+        return nullptr;
+    }
+    if (!kz_ws_valid_replay_segment(uid_ptr))
+    {
+        kz_log(&g_ws_log, "[kz_ws_ack_file_ack] Invalid local_uid.");
+        return nullptr;
+    }
+    snprintf(local_uid, sizeof(local_uid), "%s", uid_ptr);
     if (status)
     {
         // Always clean up the upload queue and active-uploads set — the server
@@ -937,6 +953,13 @@ std::function<void()> kz_ws_ack_file_ack(JSON_Object* obj)
             mapname = kz_rp_mapname_from_header(fp);
             fclose(fp);
             fp = nullptr;
+
+            if (mapname.empty() || !kz_ws_valid_replay_segment(mapname.c_str()))
+            {
+                kz_log(&g_ws_log, "[ACK] Invalid map name in replay header for: %s", local_uid);
+                cleanup();
+                return nullptr;
+            }
 
             filepath.replace_extension(".krpz");
             if (!std::filesystem::exists(filepath))

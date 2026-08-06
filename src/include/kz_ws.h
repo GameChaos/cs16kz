@@ -95,6 +95,8 @@ extern void kz_ws_uninit(void);
 
 extern void kz_ws_start(std::string url, std::string token);
 extern void kz_ws_stop(void);
+/** Re-allow ixwebsocket auto-reconnect after kz_api_url / kz_api_token change. */
+extern void kz_ws_reset_auto_reconnect_policy(void);
 
 extern void kz_ws_build_msg(int type, JSON_Value* data_val, std::string& output, int64_t msg, kz::queue<log_entry>* log_queue = &g_ws_log);
 extern void kz_ws_queue_msg(std::shared_ptr<std::string> msg, int64_t msg_id);

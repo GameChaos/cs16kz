@@ -363,6 +363,7 @@ void KZ_Cvar_DirectSet(cvar_t* var, const char* const value, IRehldsHook_Cvar_Di
         MF_Log("[WS] API settings change detected. Reconnecting...");
         kz_ws_stop();
     }
+    kz_ws_reset_auto_reconnect_policy();
     kz_ws_start(kz_api_url->string, kz_api_token->string);
     return;
 }

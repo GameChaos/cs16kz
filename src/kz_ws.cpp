@@ -16,6 +16,26 @@ kz::queue<log_entry> g_ws_log(64);
 kz::queue<std::shared_ptr<std::string>> g_outgoing_queue(64);
 kz::queue<std::function<void()>> g_incoming_queue(64);
 
+static std::atomic<bool> g_ws_auto_reconnect_allowed{true};
+
+static void kz_ws_forbid_auto_reconnect(void)
+{
+    g_ws_auto_reconnect_allowed.store(false);
+    g_websocket.disableAutomaticReconnection();
+}
+
+static void kz_ws_apply_auto_reconnect_policy(void)
+{
+    if (g_ws_auto_reconnect_allowed.load())
+    {
+        g_websocket.enableAutomaticReconnection();
+    }
+    else
+    {
+        g_websocket.disableAutomaticReconnection();
+    }
+}
+
 static void kz_ws_build_hello(std::string& out)
 {
     JSON_Value* data_val = json_value_init_object();
@@ -36,6 +56,8 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
     {
         case ix::WebSocketMessageType::Open:
         {
+            g_ws_auto_reconnect_allowed.store(true);
+            g_websocket.enableAutomaticReconnection();
             kz_storage_init();
             kz_storage_requeue_all_pending();
             kz_log(&g_ws_log, "[WS] Connection established.");
@@ -127,7 +149,7 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
             // 1008 = policy violation (bad token, unknown plugin version, cutoff, etc.) — do not spin-reconnect.
             if (msg->closeInfo.code == 1008 || msg->closeInfo.code == 1003)
             {
-                g_websocket.disableAutomaticReconnection();
+                kz_ws_forbid_auto_reconnect();
                 g_websocket_state.store(WSState::Disconnected);
             }
             else
@@ -145,7 +167,7 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
                 case 401:
                 case 403:
                 {
-                    g_websocket.disableAutomaticReconnection();
+                    kz_ws_forbid_auto_reconnect();
                     g_websocket_state.store(WSState::Disconnected);
                     break;
                 }
@@ -178,6 +200,11 @@ void kz_ws_uninit(void)
     kz_ws_stop();
     ix::uninitNetSystem();
 }
+void kz_ws_reset_auto_reconnect_policy(void)
+{
+    g_ws_auto_reconnect_allowed.store(true);
+}
+
 void kz_ws_start(std::string url, std::string token)
 {
     if(url.empty() || url.size() < 4 || token.empty())
@@ -200,8 +227,8 @@ void kz_ws_start(std::string url, std::string token)
     g_websocket.setTLSOptions(tls_options);
     g_websocket.setExtraHeaders(headers);
     g_websocket.enablePerMessageDeflate();
-    g_websocket.enableAutomaticReconnection();
     g_websocket.setOnMessageCallback(kz_ws_onmessage);
+    kz_ws_apply_auto_reconnect_policy();
     g_websocket.start();
 
     g_websocket_state.store(WSState::Initialized);

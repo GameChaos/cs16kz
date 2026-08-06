@@ -318,7 +318,7 @@ static void kz_ws_download_replay_async(std::string url, std::string mapname, st
             auto args = std::make_shared<ix::HttpRequestArgs>();
             args->followRedirects = false;
             auto response = client.get(url, args);
-            if (response && response->errorCode.ok() && response->statusCode == 200)
+            if (response && response->errorCode == ix::HttpErrorCode::Ok && response->statusCode == 200)
             {
                 const auto& payload = response->body;
                 if (payload.size() <= KZ_MAX_REPLAY_DOWNLOAD_BYTES && kz_ws_has_zstd_magic(

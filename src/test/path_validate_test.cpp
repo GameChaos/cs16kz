@@ -37,5 +37,13 @@ int run_path_validate_tests(void)
     expect(!kz_ws_valid_replays_relative_path("kz_map/../../secret.krpz"), "nested traversal");
     expect(!kz_ws_valid_replays_relative_path("/etc/passwd.krpz"), "absolute path");
 
+    expect(kz_ws_valid_steam_authid("STEAM_0:1:12345"), "valid steam auth id");
+    expect(kz_ws_valid_steam_authid("STEAM_1:0:999999999"), "valid steam1 auth id");
+    expect(!kz_ws_valid_steam_authid(nullptr), "null steam id");
+    expect(!kz_ws_valid_steam_authid(""), "empty steam id");
+    expect(!kz_ws_valid_steam_authid("STEAM_0:1"), "incomplete steam id");
+    expect(!kz_ws_valid_steam_authid("STEAM_0;1:12345"), "injection char in steam id");
+    expect(!kz_ws_valid_steam_authid("BOT"), "non-steam id");
+
     return g_failures;
 }

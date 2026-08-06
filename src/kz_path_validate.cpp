@@ -24,6 +24,31 @@ bool kz_ws_valid_replay_segment(const char* value)
     return true;
 }
 
+bool kz_ws_valid_steam_authid(const char* value)
+{
+    if (!value || strncmp(value, "STEAM_", 6) != 0)
+    {
+        return false;
+    }
+
+    int colons = 0;
+    for (const char* p = value; *p; ++p)
+    {
+        const char c = *p;
+        if (c == ':')
+        {
+            ++colons;
+            continue;
+        }
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'))
+        {
+            return false;
+        }
+    }
+
+    return colons == 2;
+}
+
 bool kz_ws_valid_replays_relative_path(const char* relative)
 {
     if (!relative || !relative[0])

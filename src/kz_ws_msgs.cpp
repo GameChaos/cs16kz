@@ -833,15 +833,23 @@ std::function<void()> kz_ws_ack_player_join(JSON_Object* obj)
 
     return [szAuth, is_banned]() {
         edict_t* pEntity = find_player_by_authid(szAuth);
-        if (!FNullEnt(pEntity) && is_banned)
+        if (FNullEnt(pEntity) || !is_banned)
         {
-            char buff[192];
-            snprintf(buff, sizeof(buff), "kick #%d \"You've been cross-community banned\"\n", GETPLAYERUSERID(pEntity));
-            SERVER_COMMAND(buff);
-
-            snprintf(buff, sizeof(buff), "banid 5 %s\n", szAuth);
-            SERVER_COMMAND(buff);
+            return;
         }
+
+        char buff[192];
+        snprintf(buff, sizeof(buff), "kick #%d \"You've been cross-community banned\"\n", GETPLAYERUSERID(pEntity));
+        SERVER_COMMAND(buff);
+
+        if (!kz_ws_valid_steam_authid(szAuth))
+        {
+            kz_log(&g_ws_log, "[kz_ws_ack_player_join] Skipping banid: invalid steamid.");
+            return;
+        }
+
+        snprintf(buff, sizeof(buff), "banid 5 %s\n", szAuth);
+        SERVER_COMMAND(buff);
     };
 }
 std::function<void()> kz_ws_ack_record_ack(JSON_Object* obj)

@@ -12,3 +12,4 @@ zig-out/
 # clangd
 .cache/
 compile_commands.json
+/zig-pkg/

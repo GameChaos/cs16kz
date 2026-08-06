@@ -52,3 +52,24 @@ The included script cross-compiles to `x86-linux-gnu` and renames the shared obj
 This runs:
 
 `zig build -Dtarget=x86-linux-gnu` and moves `zig-out/lib/libkz_global_api_amxx_i386.so` to `zig-out/lib/kz_global_api_amxx_i386.so`.
+
+---
+
+## Testing
+
+**CI** runs on every push/PR: host unit tests, native API lint, and a full Linux x86 module build (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+
+Local host tests (no full AMXX dependency fetch required for the shell script):
+
+```bash
+bash scripts/run-tests.sh
+# or: zig build test -Dtest-only=true
+```
+
+Windows:
+
+```powershell
+.\scripts\run-tests.ps1
+```
+
+These cover path-segment validation and KRP header checks. WebSocket/API integration still needs a staging game server.

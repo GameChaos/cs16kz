@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Lint, test, and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.1
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Reject MF_GetAmxString buffer misuse
+        run: |
+          if rg -q 'MF_GetAmxString.*sizeof' src/; then
+            echo "::error::MF_GetAmxString returns char* — do not pass a local buffer/size (see kz_api_get_map_details)"
+            exit 1
+          fi
+
+      - name: Host unit tests
+        run: bash scripts/run-tests.sh
+
+      - name: Fetch dependencies
+        run: zig build --fetch
+
+      - name: Build AMXX module (Linux x86)
+        run: ./build.sh
+
+      - name: Verify artifact
+        run: |
+          test -f zig-out/lib/kz_global_api_amxx_i386.so
+          file zig-out/lib/kz_global_api_amxx_i386.so

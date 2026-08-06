@@ -1,7 +1,6 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const zcc = @import("compile_commands");
 const assert = std.debug.assert;
 const Md5 = std.crypto.hash.Md5;
 
@@ -507,6 +506,7 @@ pub fn build(b: *std.Build) !void
 
         var cdb_targets = std.ArrayListUnmanaged(*std.Build.Step.Compile){};
         try cdb_targets.append(b.allocator, lib);
+        const zcc = @import("compile_commands");
         _ = zcc.createStep(b, "cdb", try cdb_targets.toOwnedSlice(b.allocator));
 
 	b.installArtifact(lib);

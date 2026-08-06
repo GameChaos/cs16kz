@@ -104,8 +104,8 @@ When adding testable logic, follow the existing pattern in `src/test/` — simpl
 WebSocket/API integration and replay playback require a staging game server; they are not covered by host tests.
 
 **CI** (`.github/workflows/ci.yml`) runs on every push/PR:
-1. Lint: reject `MF_GetAmxString` buffer misuse
-2. Host unit tests
+1. Static checks: `bash scripts/lint-amxx.sh` (rejects `MF_GetAmxString` buffer misuse)
+2. Host unit tests: `zig build test -Dtest-only=true`
 3. Full Linux x86 module build via `./build.sh`
 
 Run the full CI-equivalent checks locally before committing.

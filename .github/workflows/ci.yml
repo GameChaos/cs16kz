@@ -27,21 +27,23 @@ jobs:
         with:
           version: 0.15.1
 
-      - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
-
-      - name: Reject MF_GetAmxString buffer misuse
-        run: |
-          if rg -q 'MF_GetAmxString.*sizeof' src/; then
-            echo "::error::MF_GetAmxString returns char* — do not pass a local buffer/size (see kz_api_get_map_details)"
-            exit 1
-          fi
-
-      - name: Host unit tests
-        run: bash scripts/run-tests.sh
+      - name: Static checks
+        run: bash scripts/lint-amxx.sh
 
       - name: Fetch dependencies
         run: zig build --fetch
+
+      - name: Host unit tests
+        run: zig build test -Dtest-only=true
+
+      - name: Install Linux x86 build dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y \
+            libsqlite3-dev:i386 \
+            libssl-dev:i386 \
+            zlib1g-dev:i386
 
       - name: Build AMXX module (Linux x86)
         run: ./build.sh

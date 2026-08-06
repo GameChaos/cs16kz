@@ -28,6 +28,7 @@ If you run a KZ server and want to join the global API (records, replays, SR bot
 - **[Zig](https://ziglang.org/)** ≥ **0.15.1** (see `minimum_zig_version` in `build.zig.zon`).
 - A **C/C++ toolchain** Zig can drive (Clang/LLVM is typical).
 - **Network** for the first `zig build` so dependencies in `build.zig.zon` can be fetched; after that, `zig build --fetch` can populate the cache for offline builds.
+- **Linux x86 release build** (`./build.sh`): 32-bit system libraries — on Debian/Ubuntu, enable `i386` and install `libsqlite3-dev:i386`, `libssl-dev:i386`, and `zlib1g-dev:i386` (CI does this automatically).
 
 ---
 

@@ -207,12 +207,20 @@ void kz_ws_reset_auto_reconnect_policy(void)
 
 void kz_ws_start(std::string url, std::string token)
 {
-    if(url.empty() || url.size() < 4 || token.empty())
+    if (url.empty() || token.empty())
     {
         return;
     }
-    if(url.substr(0, 5) != "ws://" && url.substr(0, 6) != "wss://")
+    if (url.rfind("wss://", 0) != 0)
     {
+        if (url.rfind("ws://", 0) == 0)
+        {
+            kz_log(nullptr, "[WS] Refusing ws:// — kz_api_url must use wss:// to protect the bearer token");
+        }
+        else
+        {
+            kz_log(nullptr, "[WS] Invalid kz_api_url (expected wss://...)");
+        }
         return;
     }
 

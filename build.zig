@@ -108,9 +108,11 @@ fn buildHostUnitTests(b: *std.Build) !void {
         .files = &.{
             "kz_path_validate.cpp",
             "krp_header_validate.cpp",
+            "kz_replay_uid.cpp",
             "test/test_main.cpp",
             "test/path_validate_test.cpp",
             "test/krp_validate_test.cpp",
+            "test/replay_uid_test.cpp",
         },
         .flags = &.{"-std=c++17"},
     });
@@ -492,6 +494,7 @@ pub fn build(b: *std.Build) !void
 			"kz_cvars.cpp",
 			"kz_natives.cpp",
 			"kz_path_validate.cpp",
+			"kz_replay_uid.cpp",
 			"kz_replay.cpp",
 			"kz_replay_pb.cpp",
 			"kz_storage.cpp",

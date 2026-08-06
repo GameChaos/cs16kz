@@ -15,9 +15,11 @@ $Exe = Join-Path $OutDir "kz_global_api_tests.exe"
 $Sources = @(
     "src/kz_path_validate.cpp",
     "src/krp_header_validate.cpp",
+    "src/kz_replay_uid.cpp",
     "src/test/test_main.cpp",
     "src/test/path_validate_test.cpp",
-    "src/test/krp_validate_test.cpp"
+    "src/test/krp_validate_test.cpp",
+    "src/test/replay_uid_test.cpp"
 ) | ForEach-Object { Join-Path $Root $_ }
 
 Push-Location $Root

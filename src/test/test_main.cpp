@@ -2,12 +2,14 @@
 
 extern int run_path_validate_tests(void);
 extern int run_krp_validate_tests(void);
+extern int run_replay_uid_tests(void);
 
 int main(void)
 {
     int failures = 0;
     failures += run_path_validate_tests();
     failures += run_krp_validate_tests();
+    failures += run_replay_uid_tests();
 
     if (failures != 0)
     {

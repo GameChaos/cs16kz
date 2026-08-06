@@ -366,6 +366,7 @@ static void kz_ws_download_replay_async(std::string url, std::string mapname, st
             if (ec)
             {
                 kz_log(&g_ws_log, "[GET_REPLAY] Failed to create directory: %s", ec.message().c_str());
+                kz_ws_schedule_replay_download_retry(mapname);
                 return;
             }
 
@@ -373,6 +374,7 @@ static void kz_ws_download_replay_async(std::string url, std::string mapname, st
             if (!fp)
             {
                 kz_log(&g_ws_log, "[GET_REPLAY] Failed to write replay: %s", out_path.string().c_str());
+                kz_ws_schedule_replay_download_retry(mapname);
                 return;
             }
             const size_t written = fwrite(body.data(), 1, body.size(), fp);
@@ -382,6 +384,7 @@ static void kz_ws_download_replay_async(std::string url, std::string mapname, st
             {
                 std::filesystem::remove(out_path, ec);
                 kz_log(&g_ws_log, "[GET_REPLAY] Incomplete write for %s", local_uid.c_str());
+                kz_ws_schedule_replay_download_retry(mapname);
                 return;
             }
 
@@ -397,7 +400,7 @@ static void kz_ws_download_replay_async(std::string url, std::string mapname, st
             kz_pb_parse_file_async(out_path);
         }))
         {
-            kz_ws_clear_replay_fetch_pending(mapname.c_str());
+            kz_ws_schedule_replay_download_retry(mapname);
         }
     }).detach();
 }

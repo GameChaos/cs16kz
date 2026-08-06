@@ -287,26 +287,26 @@ void kz_ws_delete_record_replay(const char* mapname, const char* local_uid)
     kz_pb_reload_sr_bot(mapname);
 }
 
-void kz_ws_try_fetch_replay(const char* mapname)
+bool kz_ws_try_fetch_replay(const char* mapname)
 {
     if (!mapname || !mapname[0] || !kz_ws_valid_replay_segment(mapname))
     {
-        return;
+        return false;
     }
     if (g_websocket_state.load() != WSState::Connected)
     {
-        return;
+        return false;
     }
 
     {
         std::lock_guard<std::mutex> lock(g_replay_fetch_mtx);
         if (g_replay_fetch_pending.find(mapname) != g_replay_fetch_pending.end())
         {
-            return;
+            return false;
         }
         if (!kz_pb_find_fastest(mapname).empty())
         {
-            return;
+            return false;
         }
         g_replay_fetch_pending.insert(mapname);
     }
@@ -322,6 +322,7 @@ void kz_ws_try_fetch_replay(const char* mapname)
     auto shared_msg = std::make_shared<std::string>(std::move(message));
     kz_storage_save(shared_msg, WSMsgOut::GET_REPLAY, msg_id, StorageTable::outgoing_queue);
     kz_ws_queue_msg(shared_msg, msg_id);
+    return true;
 }
 
 static void kz_ws_download_replay_async(std::string url, std::string mapname, std::string local_uid)

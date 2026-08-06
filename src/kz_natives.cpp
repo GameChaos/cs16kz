@@ -253,8 +253,7 @@ static cell AMX_NATIVE_CALL kz_api_get_replay(AMX* amx, cell* params)
         return 0;
     }
 
-    kz_ws_try_fetch_replay(mapname);
-    return 1;
+    return kz_ws_try_fetch_replay(mapname) ? 1 : 0;
 }
 
 AMX_NATIVE_INFO kz_api_natives[] =

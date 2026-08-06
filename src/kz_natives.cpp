@@ -216,10 +216,19 @@ static cell AMX_NATIVE_CALL kz_api_del_record(AMX* amx, cell* params)
         return 0;
     }
 
+    int len = 0;
+    char* mapname_ptr = MF_GetAmxString(amx, params[1], 0, &len);
+    char* local_uid_ptr = MF_GetAmxString(amx, params[2], 1, &len);
+
+    if (!mapname_ptr || !local_uid_ptr || !mapname_ptr[0] || !local_uid_ptr[0])
+    {
+        return 0;
+    }
+
     char mapname[64] = {0};
     char local_uid[64] = {0};
-    MF_GetAmxString(amx, params[1], 0, mapname, sizeof(mapname) - 1);
-    MF_GetAmxString(amx, params[2], 1, local_uid, sizeof(local_uid) - 1);
+    snprintf(mapname, sizeof(mapname), "%s", mapname_ptr);
+    snprintf(local_uid, sizeof(local_uid), "%s", local_uid_ptr);
 
     if (!kz_ws_valid_replay_segment(mapname) || !kz_ws_valid_replay_segment(local_uid))
     {
@@ -237,8 +246,13 @@ static cell AMX_NATIVE_CALL kz_api_get_replay(AMX* amx, cell* params)
         return 0;
     }
 
-    char mapname[64] = {0};
-    MF_GetAmxString(amx, params[1], 0, mapname, sizeof(mapname) - 1);
+    int len = 0;
+    char* mapname = MF_GetAmxString(amx, params[1], 0, &len);
+    if (!mapname || !mapname[0])
+    {
+        return 0;
+    }
+
     kz_ws_try_fetch_replay(mapname);
     return 1;
 }

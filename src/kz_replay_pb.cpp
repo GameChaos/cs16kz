@@ -100,6 +100,26 @@ void kz_pb_drop_parsed_replay(const std::filesystem::path& path)
     }
 }
 
+void kz_pb_stop_if_playing(const std::filesystem::path& path)
+{
+    if (!g_pb_bot_data || g_pb_bot_data->filepath != path)
+    {
+        return;
+    }
+
+    if (g_pb_bot_id)
+    {
+        edict_t* bot = edictByIndex(g_pb_bot_id);
+        if (!FNullEnt(bot))
+        {
+            REMOVE_ENTITY(bot);
+        }
+    }
+
+    g_pb_bot_id = 0;
+    g_pb_bot_data = nullptr;
+}
+
 void kz_pb_init(void)
 {
     kz_log_addq(&g_pb_parse_log);

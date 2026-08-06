@@ -247,27 +247,7 @@ static bool kz_ws_has_zstd_magic(const uint8_t* data, size_t len)
     return len >= 4 && data[0] == 0x28 && data[1] == 0xB5 && data[2] == 0x2F && data[3] == 0xFD;
 }
 
-static void kz_ws_reset_bot_if_playing(const std::filesystem::path& path)
-{
-    if (!g_pb_bot_data)
-    {
-        return;
-    }
-    if (g_pb_bot_data->filepath != path)
-    {
-        return;
-    }
-    if (g_pb_bot_id)
-    {
-        edict_t* bot = edictByIndex(g_pb_bot_id);
-        if (!FNullEnt(bot))
-        {
-            REMOVE_ENTITY(bot);
-        }
-    }
-    g_pb_bot_id = 0;
-    g_pb_bot_data = nullptr;
-}
+static void kz_ws_delete_replay_files(const char* local_uid, const char* mapname);
 
 void kz_ws_delete_record_replay(const char* mapname, const char* local_uid)
 {
@@ -282,7 +262,7 @@ void kz_ws_delete_record_replay(const char* mapname, const char* local_uid)
     std::filesystem::path path = g_data_dir / "kz_global" / "replays" / mapname / local_uid;
     path.replace_extension(".krpz");
     kz_pb_drop_parsed_replay(path);
-    kz_ws_reset_bot_if_playing(path);
+    kz_pb_stop_if_playing(path);
 
     kz_pb_reload_sr_bot(mapname);
 }
@@ -335,8 +315,9 @@ static void kz_ws_download_replay_async(std::string url, std::string mapname, st
         {
             ix::HttpClient client;
             client.setTLSOptions(kz_ws_replay_download_tls_options());
-            client.setFollowRedirects(false);
-            auto response = client.get(url);
+            auto args = std::make_shared<ix::HttpRequestArgs>();
+            args->followRedirects = false;
+            auto response = client.get(url, args);
             if (response && response->errorCode.ok() && response->statusCode == 200)
             {
                 const auto& payload = response->body;

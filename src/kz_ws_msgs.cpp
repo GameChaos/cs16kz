@@ -47,6 +47,10 @@ bool kz_ws_valid_replay_segment(const char* value)
     {
         return false;
     }
+    if (strcmp(value, ".") == 0 || strcmp(value, "..") == 0)
+    {
+        return false;
+    }
     for (const char* p = value; *p; ++p)
     {
         const char c = *p;

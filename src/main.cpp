@@ -322,6 +322,10 @@ void FN_ClientPutInServer_Post(edict_t* pEntity)
         remove_substring(g_players[id].steamid_short, "STEAM_");
         remove_substring(g_players[id].steamid_short, ":");
         remove_substring(g_players[id].steamid_short, ":");
+        if (!kz_ws_valid_replay_segment(g_players[id].steamid_short))
+        {
+            snprintf(g_players[id].steamid_short, sizeof(g_players[0].steamid_short), "p%d", id);
+        }
 
         kz_ws_event_client_connect(pEntity);
     }

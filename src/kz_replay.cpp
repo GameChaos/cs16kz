@@ -648,6 +648,12 @@ static void kz_rp_writer_thread(void)
                     krp_header header   = kz_rp_get_header();
                     const char* mapname = header.map.name;
 
+                    if (!kz_ws_valid_replay_segment(sig->steamid_short) || !kz_ws_valid_replay_segment(mapname))
+                    {
+                        kz_log(&g_replay_writer_log, "[KRP] ERROR: Invalid steamid or map name for player (%d)", id);
+                        break;
+                    }
+
                     header.timestamp = sig->ts;
 
                     std::filesystem::path path = g_data_dir / "kz_global" / "replays" / mapname / sig->steamid_short;
@@ -732,6 +738,12 @@ static void kz_rp_writer_thread(void)
                     krp_header header   = kz_rp_get_header();
                     const char* mapname = header.map.name;
 
+                    if (!kz_ws_valid_replay_segment(sig->steamid_short) || !kz_ws_valid_replay_segment(mapname))
+                    {
+                        kz_log(&g_replay_writer_log, "[KRP] ERROR: Invalid steamid or map name for player (%d)", id);
+                        break;
+                    }
+
                     std::filesystem::path path = g_data_dir / "kz_global" / "replays" / mapname / sig->steamid_short;
                     snprintf(s_filepath[id], sizeof(s_filepath[0]), "%s.tmp", path.string().c_str());
 
@@ -787,6 +799,15 @@ static void kz_rp_writer_thread(void)
                         char new_path[255];
                         krp_signal* sig     = reinterpret_cast<krp_signal*>(s_curr->data);
                         std::string mapname = kz_rp_mapname_from_header(s_fd[id]);
+
+                        if (!kz_ws_valid_replay_segment(sig->steamid_short) || !kz_ws_valid_replay_segment(mapname.c_str()))
+                        {
+                            kz_log(&g_replay_writer_log, "[KRP] ERROR: Invalid steamid or map name for player (%d)", id);
+                            fclose(s_fd[id]);
+                            s_fd[id] = nullptr;
+                            unlink(s_filepath[id]);
+                            break;
+                        }
 
                         char uid_str[64];
                         char ts_str[16];

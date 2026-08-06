@@ -29,6 +29,16 @@ std::set<std::string> g_active_uploads;
 static std::mutex g_replay_fetch_mtx;
 static std::set<std::string> g_replay_fetch_pending;
 
+static void kz_ws_clear_replay_fetch_pending(const char* mapname)
+{
+    if (!mapname || !mapname[0])
+    {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_replay_fetch_mtx);
+    g_replay_fetch_pending.erase(mapname);
+}
+
 static constexpr size_t KZ_MAX_REPLAY_DOWNLOAD_BYTES = 104857600ULL;
 
 static bool kz_ws_valid_replay_segment(const char* value)
@@ -148,10 +158,7 @@ static void kz_ws_download_replay_async(std::string url, std::string mapname, st
         }
 
         if (!g_incoming_queue.try_push([ok, body = std::move(body), mapname, local_uid]() mutable {
-            {
-                std::lock_guard<std::mutex> lock(g_replay_fetch_mtx);
-                g_replay_fetch_pending.erase(mapname);
-            }
+            kz_ws_clear_replay_fetch_pending(mapname.c_str());
 
             if (!ok)
             {
@@ -195,8 +202,7 @@ static void kz_ws_download_replay_async(std::string url, std::string mapname, st
             kz_pb_parse_file_async(out_path);
         }))
         {
-            std::lock_guard<std::mutex> lock(g_replay_fetch_mtx);
-            g_replay_fetch_pending.erase(mapname);
+            kz_ws_clear_replay_fetch_pending(mapname.c_str());
         }
     }).detach();
 }
@@ -497,8 +503,10 @@ std::function<void()> kz_ws_ack_error(JSON_Object* obj)
             };
         }
     }
-    else
+    else if (msg_type == WSMsgOut::GET_REPLAY)
     {
+        const char* map_name = json_object_dotget_string(json_value_get_object(stored_val), "data.map_name");
+        kz_ws_clear_replay_fetch_pending(map_name);
     }
     json_value_free(stored_val);
     return callback;
@@ -790,21 +798,39 @@ std::function<void()> kz_ws_ack_file_ack(JSON_Object* obj)
 
 std::function<void()> kz_ws_ack_get_replay(JSON_Object* obj)
 {
-    ACK_CHECK_MISSING(data.url);
-    ACK_CHECK_MISSING(data.local_uid);
-    ACK_CHECK_MISSING(data.map_name);
+    const char* map_name = json_object_dotget_string(obj, "data.map_name");
+
+    if (!json_object_dotget_value(obj, "data.url"))
+    {
+        kz_log(&g_ws_log, "[kz_ws_ack_get_replay] Error: missing data.url.");
+        kz_ws_clear_replay_fetch_pending(map_name);
+        return nullptr;
+    }
+    if (!json_object_dotget_value(obj, "data.local_uid"))
+    {
+        kz_log(&g_ws_log, "[kz_ws_ack_get_replay] Error: missing data.local_uid.");
+        kz_ws_clear_replay_fetch_pending(map_name);
+        return nullptr;
+    }
+    if (!json_object_dotget_value(obj, "data.map_name"))
+    {
+        kz_log(&g_ws_log, "[kz_ws_ack_get_replay] Error: missing data.map_name.");
+        return nullptr;
+    }
 
     const char* url = json_object_dotget_string(obj, "data.url");
     const char* local_uid = json_object_dotget_string(obj, "data.local_uid");
-    const char* map_name = json_object_dotget_string(obj, "data.map_name");
+    map_name = json_object_dotget_string(obj, "data.map_name");
 
     if (!url || !local_uid || !map_name)
     {
+        kz_ws_clear_replay_fetch_pending(map_name);
         return nullptr;
     }
     if (!kz_ws_valid_replay_segment(map_name) || !kz_ws_valid_replay_segment(local_uid))
     {
         kz_log(&g_ws_log, "[GET_REPLAY_ACK] Invalid map_name or local_uid.");
+        kz_ws_clear_replay_fetch_pending(map_name);
         return nullptr;
     }
 

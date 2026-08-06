@@ -322,6 +322,10 @@ error zstd_decompress(const uint8_t* src, size_t len, std::vector<uint8_t>& out)
     {
         return error::zstd_error;
     }
+    if (content_size == 0 || content_size > KRP_MAX_DECOMPRESSED_BYTES)
+    {
+        return error::zstd_error;
+    }
 
     out.resize(static_cast<size_t>(content_size));
 

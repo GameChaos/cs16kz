@@ -11,6 +11,9 @@
 namespace krp
 {
 
+/* Max decompressed .krpz body size (100 MiB); must match download cap in kz_ws_msgs.cpp. */
+static constexpr size_t KRP_MAX_DECOMPRESSED_BYTES = 104857600ULL;
+
 enum class error
 {
     ok = 0,

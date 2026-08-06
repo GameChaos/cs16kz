@@ -77,6 +77,7 @@ void FN_AMXX_ATTACH()
     kz_api_bot_prefix  = register_cvar("kz_api_bot_prefix", "[SR]", FCVAR_EXTDLL | FCVAR_SPONLY);
     kz_api_bot_team    = register_cvar("kz_api_bot_team", "1", FCVAR_EXTDLL | FCVAR_SPONLY);
     kz_api_bot_use_cmd = register_cvar("kz_api_bot_use_cmd", "0", FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_allow_pause = register_cvar("kz_api_allow_pause", "0", FCVAR_EXTDLL | FCVAR_SPONLY);
 
     REG_SVR_COMMAND("kz_api", kz_api_cmd);
     kz_api_add_natives();
@@ -118,13 +119,7 @@ void FN_AMXX_PLUGINSLOADED()
         SERVER_COMMAND(buffer);
         SERVER_EXECUTE();
     }
-    kz_rp_update_header();
-
-    if (g_initialized && g_websocket_state.load() == WSState::Connected)
-    {
-        g_current_map_info.updated = false;
-        kz_ws_event_map_change();
-    }
+    kz_ws_on_map_loaded(false);
 
     kz_api_add_forwards();
     kz_storage_load();
@@ -169,6 +164,10 @@ void FN_StartFrame()
 void FN_ServerActivate_Post(edict_t* pEdictList, int edictCount, int clientMax)
 {
     g_msg_teaminfo = GET_USER_MSG_ID(PLID, "TeamInfo", NULL);
+    if (g_initialized)
+    {
+        kz_ws_on_map_loaded(false);
+    }
     RETURN_META(MRES_IGNORED);
 }
 void FN_ServerDeactivate_Post(void)

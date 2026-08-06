@@ -23,6 +23,7 @@ extern cvar_t* kz_api_replays_max;
 extern cvar_t* kz_api_bot_prefix;
 extern cvar_t* kz_api_bot_team;
 extern cvar_t* kz_api_bot_use_cmd;
+extern cvar_t* kz_api_allow_pause;
 
 extern const pr_cvar_t g_server_cvars[];
 extern const size_t g_server_cvars_size;

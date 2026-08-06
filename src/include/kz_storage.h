@@ -28,6 +28,7 @@ extern void kz_storage_init(void);
 extern void kz_storage_uninit(void);
 extern void kz_storage_load();
 extern void kz_storage_clear();
+extern void kz_storage_requeue_all_pending(void);
 extern int64_t kz_storage_get_next_id(StorageTable table);
 extern void kz_storage_save(std::shared_ptr<std::string> text, int64_t msg_type, int64_t msg_id, StorageTable table);
 extern void kz_storage_delete(int64_t msg_id, StorageTable table);

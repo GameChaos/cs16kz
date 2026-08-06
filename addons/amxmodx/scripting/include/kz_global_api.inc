@@ -31,11 +31,15 @@ native kz_api_run_started(id);
 
 /**
  * Notifies the API that a player has paused their run.
+ *
+ * @return              1 on success, 0 if pause is forbidden (kz_api_allow_pause 0)
  */
 native kz_api_run_paused(id);
 
 /**
  * Notifies the API that a player has resumed their run.
+ *
+ * @return              1 on success, 0 if pause is forbidden (kz_api_allow_pause 0)
  */
 native kz_api_run_unpaused(id);
 

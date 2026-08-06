@@ -11,6 +11,7 @@ public plugin_init()
 	register_concmd("run_start",   "cmd_start");
 	register_concmd("run_pause",   "cmd_pause")
 	register_concmd("run_unpause", "cmd_unpause");
+	register_concmd("run_pause_forbidden", "cmd_pause_forbidden");
 	register_concmd("run_reject",  "cmd_reject")
 	register_concmd("run_finish",  "cmd_finish");
 
@@ -58,8 +59,18 @@ public cmd_pause(id)
     g_fPauseTime[id] = get_gametime();
 
     server_print("[TEST] Pausing run for ID %d...", id);
+    if (!kz_api_run_paused(id))
+    {
+        client_print_color(id, print_team_red, "[^3TEST^1] Pause rejected (forbidden on global servers).");
+        return;
+    }
     client_print_color(id, print_team_red, "[^3TEST^1] Run paused.");
-    kz_api_run_paused(id);
+}
+
+public cmd_pause_forbidden(id)
+{
+    new result = kz_api_run_paused(id);
+    client_print_color(id, print_team_red, "[^3TEST^1] kz_api_run_paused returned %d (0 = forbidden).", result);
 }
 
 public cmd_unpause(id)
@@ -67,8 +78,12 @@ public cmd_unpause(id)
     g_fTimer[id] += get_gametime() - g_fPauseTime[id];
 
     server_print("[TEST] Unpausing run for ID %d...", id);
+    if (!kz_api_run_unpaused(id))
+    {
+        client_print_color(id, print_team_red, "[^3TEST^1] Unpause rejected (pause not active or forbidden).");
+        return;
+    }
     client_print_color(id, print_team_red, "[^3TEST^1] Run unpaused.");
-    kz_api_run_unpaused(id);
 }
 
 public cmd_finish(id)

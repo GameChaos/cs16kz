@@ -99,6 +99,12 @@ int kz_rp_run_gocheck(int id)
 }
 int kz_rp_run_paused(int id)
 {
+    if (!kz_api_allow_pause || kz_api_allow_pause->value <= 0.0f)
+    {
+        kz_log(nullptr, "[KRP] Pause is disabled on global API servers (kz_api_allow_pause 0).");
+        return 0;
+    }
+
     krp_packet item = {};
     item.player_index = id;
     item.type = KRP_SIGNAL_PAUSE;
@@ -113,6 +119,11 @@ int kz_rp_run_paused(int id)
 }
 int kz_rp_run_unpaused(int id)
 {
+    if (!kz_api_allow_pause || kz_api_allow_pause->value <= 0.0f)
+    {
+        return 0;
+    }
+
     krp_packet item = {};
     item.player_index = id;
     item.type = KRP_SIGNAL_UNPAUSE;
@@ -968,10 +979,6 @@ static void kz_rp_upload_thread(void)
                         last_log_time = now;
                     }
                 }
-            }
-            {
-                std::lock_guard<std::mutex> lock(g_active_uploads_mtx);
-                g_active_uploads.erase(item->local_uid);
             }
             g_replay_upload_queue.pop();
             fclose(fp);

@@ -9,6 +9,7 @@
 #include "kz_replay.h"
 #include "kz_storage.h"
 #include "kz_natives.h"
+#include "kz_path_validate.h"
 
 #include "krp_codec.h"
 
@@ -48,6 +49,34 @@ static std::string get_timestamp_string(uint64_t ts_ms, bool use_utc);
 std::filesystem::path kz_pb_find_fastest(const char* mapname);
 
 extern float g_wait_after_load;
+
+void kz_pb_reload_sr_bot(const char* mapname)
+{
+    if (!mapname || !mapname[0] || !kz_ws_valid_replay_segment(mapname))
+    {
+        return;
+    }
+    if (!FStrEq(mapname, STRING(gpGlobals->mapname)))
+    {
+        return;
+    }
+
+    std::filesystem::path file = kz_pb_find_fastest(mapname);
+    if (!file.empty())
+    {
+        if (g_pb_bot_data && g_pb_bot_data->filepath == file)
+        {
+            return;
+        }
+        kz_pb_parse_file_async(file);
+        return;
+    }
+
+    if (g_websocket_state.load() == WSState::Connected)
+    {
+        kz_ws_try_fetch_replay(mapname);
+    }
+}
 
 void kz_pb_init(void)
 {

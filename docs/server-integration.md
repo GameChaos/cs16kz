@@ -158,6 +158,7 @@ Other useful settings (all documented in the cfg file):
 |------|---------|
 | `kz_api_log_send` / `recv` / `upload` / `parse` | Verbose logging for debugging |
 | `kz_api_retries_max` / `kz_api_retries_delay` | Retry failed API messages |
+| `kz_api_allow_pause` | Allow run pause on this server (`0` = forbidden on global servers, default) |
 | `kz_api_replays_clevel` | Replay compression level (1–22) |
 | `kz_api_bot_prefix` / `bot_team` / `bot_use_cmd` | SR replay bot appearance and behaviour |
 
@@ -174,14 +175,20 @@ The module exposes **Pawn natives** (see `addons/amxmodx/scripting/include/kz_gl
 | Game event | Native |
 |------------|--------|
 | Player starts a timed run | `kz_api_run_started(id)` |
-| Player pauses (menu / +pause) | `kz_api_run_paused(id)` |
+| Player pauses (menu / +pause) | `kz_api_run_paused(id)` — returns `0` when pause is forbidden |
 | Player unpauses | `kz_api_run_unpaused(id)` |
 | Run invalid (death, disconnect, restart, style violation) | `kz_api_run_rejected(id, true)` |
 | Player finishes with a valid time | `kz_api_run_finished(id, Float:time)` |
 
 **Timer:** The module does **not** compute finish time. Your plugin must track elapsed time and **exclude pause time** (see `addons/amxmodx/scripting/kz_global_api_tests.sma` for a minimal example).
 
-**Pause:** Call `run_paused` / `run_unpaused` in sync with your in-game pause. If you pause gameplay but forget the native, the replay keeps recording through the pause and the global API will reject the submission.
+**Pause:** On global API servers, pause is **forbidden by default** (`kz_api_allow_pause 0`). Your gameplay plugin must disable pause UI when the native returns `0`. If you enable pause for staging (`kz_api_allow_pause 1`), call `run_paused` / `run_unpaused` in sync with your in-game pause and exclude pause time from the finish timer. If you pause gameplay but forget the native, the replay keeps recording through the pause and the global API will reject the submission.
+
+**Map load / WR replay:** On every map load the module notifies the API (`MAP_CHANGE`), receives `MAP_INFO`, and fetches the WR replay via `GET_REPLAY` when no local `.krpz` exists. Cached replays load the SR bot from disk without re-downloading.
+
+**Admin record deletion:** When the API broadcasts `DEL_RECORD_NOTIFY`, the module deletes local `.krpz`/`.krpr` files, resets the SR bot if needed, then loads the next-best local replay or re-fetches the WR.
+
+**Reconnect:** After a WebSocket reconnect, pending record submissions and replay uploads are retried immediately. Missed broadcasts while offline are resynced on the next map load or reconnect `HELLO`/`MAP_INFO`.
 
 **Cleanup:** Call `kz_api_run_rejected(id, true)` when a player disconnects mid-run, dies (if the run ends), or resets — otherwise leftover replay files may accumulate.
 
@@ -214,7 +221,7 @@ Plugins that `#include <kz_global_api>` must match the loaded module version. A 
 
 ### Reference test plugin
 
-`addons/amxmodx/scripting/kz_global_api_tests.sma` registers console commands (`run_start`, `run_pause`, …) to exercise the API. Compile and load it only for **testing**, not as a replacement for a real KZ plugin.
+`addons/amxmodx/scripting/kz_global_api_tests.sma` registers console commands (`run_start`, `run_pause`, `run_pause_forbidden`, …) to exercise the API. Pause commands only succeed when `kz_api_allow_pause 1`. Compile and load it only for **testing**, not as a replacement for a real KZ plugin.
 
 ---
 
@@ -225,7 +232,7 @@ Plugins that `#include <kz_global_api>` must match the loaded module version. A 
 - [ ] Server log shows WebSocket activity (enable `kz_api_log_recv` temporarily)
 - [ ] KZ plugin calls `run_started` → … → `run_finished` on a test finish
 - [ ] TP server: checkpoint and gocheck natives fire when players CP / gocheck
-- [ ] Pause/unpause natives match your timer behaviour
+- [ ] Pause disabled in gameplay plugin when `kz_api_allow_pause` is `0` (or natives return `0`)
 - [ ] Disconnect / death / reset calls `run_rejected`
 - [ ] Finish time on server matches what you expect on the global site
 - [ ] SR bot spawns after a valid WR replay is available (may take one accepted record on that map)

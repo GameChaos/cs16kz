@@ -160,6 +160,16 @@ void kz_storage_clear()
     //kz_storage_batch_delete(delete_list[1], StorageTable::upload_queue);
 }
 
+void kz_storage_requeue_all_pending(void)
+{
+    std::lock_guard<std::mutex> lock(g_retry_mtx);
+    for (auto& r : g_retry_queue)
+    {
+        r.timestamp   = 0;
+        r.retry_count = 0;
+    }
+}
+
 int64_t kz_storage_get_next_id(StorageTable table)
 {
     try

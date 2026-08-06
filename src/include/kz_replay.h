@@ -109,4 +109,5 @@ extern int kz_pb_check_visibility(const edict_t* pEntity, unsigned char* pset);
 extern void kz_pb_parse_file_async(std::filesystem::path file);
 extern std::string kz_rp_mapname_from_header(FILE* fp);
 extern std::filesystem::path kz_pb_find_fastest(const char* mapname);
+extern void kz_pb_reload_sr_bot(const char* mapname);
 #endif

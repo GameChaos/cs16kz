@@ -37,6 +37,7 @@ static void kz_ws_onmessage(const ix::WebSocketMessagePtr& msg)
         case ix::WebSocketMessageType::Open:
         {
             kz_storage_init();
+            kz_storage_requeue_all_pending();
             kz_log(&g_ws_log, "[WS] Connection established.");
             g_websocket_state.store(WSState::Connected);
 

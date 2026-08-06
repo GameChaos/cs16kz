@@ -94,8 +94,40 @@ fn getGitVersion(b: *std.Build) []const u8 {
         if (is_dirty and !std.mem.endsWith(u8, tag_out, "-dirty")) "-dirty" else ""
     });
 }
+
+fn buildHostUnitTests(b: *std.Build) !void {
+    const test_exe = b.addExecutable(.{
+        .name = "kz_global_api_tests",
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+    test_exe.root_module.addIncludePath(b.path("src/include"));
+    test_exe.addCSourceFiles(.{
+        .root = b.path("src"),
+        .files = &.{
+            "kz_path_validate.cpp",
+            "krp_header_validate.cpp",
+            "test/test_main.cpp",
+            "test/path_validate_test.cpp",
+            "test/krp_validate_test.cpp",
+        },
+        .flags = &.{"-std=c++17"},
+    });
+    test_exe.linkLibCpp();
+    const run_test = b.addRunArtifact(test_exe);
+    const test_step = b.step("test", "Run host-side unit tests");
+    test_step.dependOn(&run_test.step);
+}
+
 pub fn build(b: *std.Build) !void
 {
+    try buildHostUnitTests(b);
+
+    const test_only = b.option(bool, "test-only", "Build and run host unit tests only (skip AMXX module)") orelse false;
+    if (test_only) return;
+
     const target = b.standardTargetOptions(.{});
 	
 	if (target.result.os.tag != .linux and target.result.os.tag != .windows)
@@ -456,9 +488,11 @@ pub fn build(b: *std.Build) !void
 		.files = &.{
 			"amxxmodule.cpp",
 			"krp_format.cpp",
+			"krp_header_validate.cpp",
 			"kz_basic_ac.cpp",
 			"kz_cvars.cpp",
 			"kz_natives.cpp",
+			"kz_path_validate.cpp",
 			"kz_replay.cpp",
 			"kz_replay_pb.cpp",
 			"kz_storage.cpp",

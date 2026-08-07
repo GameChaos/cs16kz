@@ -64,7 +64,7 @@ void kz_pb_reload_sr_bot(const char* mapname)
         return;
     }
 
-    std::filesystem::path file = kz_pb_find_fastest(mapname);
+    std::filesystem::path file = kz_pb_find_sr_replay(mapname);
     if (!file.empty())
     {
         if (g_pb_bot_data && g_pb_bot_data->filepath == file)
@@ -79,6 +79,25 @@ void kz_pb_reload_sr_bot(const char* mapname)
     {
         kz_ws_try_fetch_replay(mapname);
     }
+}
+
+std::filesystem::path kz_pb_find_sr_replay(const char* mapname)
+{
+    const std::filesystem::path file = kz_pb_find_fastest(mapname);
+    if (file.empty())
+    {
+        return {};
+    }
+    if (g_current_map_info.updated && g_current_map_info.szWR_Pro[0] != '\0')
+    {
+        uint8_t run_class = 0;
+        uint32_t time_ms = 0;
+        if (kz_replay_parse_uid(file.filename().string(), run_class, time_ms) && run_class == 1)
+        {
+            return {};
+        }
+    }
+    return file;
 }
 
 void kz_pb_drop_parsed_replay(const std::filesystem::path& path)
@@ -146,7 +165,7 @@ void kz_pb_frame(void)
 
         g_wait_after_load = 0.0f;
 
-        std::filesystem::path file = kz_pb_find_fastest(STRING(gpGlobals->mapname));
+        std::filesystem::path file = kz_pb_find_sr_replay(STRING(gpGlobals->mapname));
         if (!file.empty())
         {
             kz_pb_parse_file_async(file);

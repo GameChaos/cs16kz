@@ -10,11 +10,13 @@
 #include "kz_storage.h"
 #include "kz_natives.h"
 #include "kz_path_validate.h"
+#include "kz_replay_uid.h"
 
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <ixwebsocket/IXHttpClient.h>
+#include <set>
 #include <thread>
 #include <vector>
 
@@ -51,6 +53,53 @@ void kz_ws_release_active_upload(const char* local_uid)
 
 static std::mutex g_replay_fetch_mtx;
 static std::set<std::string> g_replay_fetch_pending;
+static std::set<std::string> g_replay_pro_upgrade_failed;
+
+static bool kz_ws_map_has_pro_wr(void)
+{
+    return g_current_map_info.updated && g_current_map_info.szWR_Pro[0] != '\0';
+}
+
+static bool kz_ws_local_has_pro_replay(const char* mapname)
+{
+    const std::filesystem::path file = kz_pb_find_fastest(mapname);
+    if (file.empty())
+    {
+        return false;
+    }
+
+    uint8_t run_class = 0;
+    uint32_t time_ms = 0;
+    if (!kz_replay_parse_uid(file.filename().string(), run_class, time_ms))
+    {
+        return false;
+    }
+    return run_class == 0;
+}
+
+static bool kz_ws_local_replay_is_sufficient(const char* mapname)
+{
+    const std::filesystem::path file = kz_pb_find_fastest(mapname);
+    if (file.empty())
+    {
+        return false;
+    }
+    if (kz_ws_map_has_pro_wr())
+    {
+        return kz_ws_local_has_pro_replay(mapname);
+    }
+    return true;
+}
+
+static void kz_ws_clear_replay_pro_upgrade_failed(const char* mapname)
+{
+    if (!mapname || !mapname[0])
+    {
+        g_replay_pro_upgrade_failed.clear();
+        return;
+    }
+    g_replay_pro_upgrade_failed.erase(mapname);
+}
 
 struct replay_download_retry
 {
@@ -173,7 +222,7 @@ static void kz_ws_process_replay_download_retries(void)
             continue;
         }
 
-        if (!kz_pb_find_fastest(mapname.c_str()).empty())
+        if (kz_ws_local_replay_is_sufficient(mapname.c_str()))
         {
             std::lock_guard<std::mutex> lock(g_replay_download_retry_mtx);
             g_replay_download_retries.erase(
@@ -222,6 +271,7 @@ void kz_ws_on_map_loaded(bool force)
     g_wait_after_load = 1.0f;
 
     kz_ws_clear_replay_fetch_pending_except(mapname);
+    kz_ws_clear_replay_pro_upgrade_failed(mapname);
 
     kz_rp_update_header();
     g_current_map_info.updated = false;
@@ -232,7 +282,7 @@ void kz_ws_on_map_loaded(bool force)
     }
     else
     {
-        std::filesystem::path file = kz_pb_find_fastest(mapname);
+        std::filesystem::path file = kz_pb_find_sr_replay(mapname);
         if (!file.empty())
         {
             kz_pb_parse_file_async(file);
@@ -284,7 +334,11 @@ bool kz_ws_try_fetch_replay(const char* mapname)
         {
             return false;
         }
-        if (!kz_pb_find_fastest(mapname).empty())
+        if (g_replay_pro_upgrade_failed.find(mapname) != g_replay_pro_upgrade_failed.end())
+        {
+            return false;
+        }
+        if (kz_ws_local_replay_is_sufficient(mapname))
         {
             return false;
         }
@@ -376,6 +430,7 @@ static void kz_ws_download_replay_async(std::string url, std::string mapname, st
 
             kz_log(&g_ws_log, "[GET_REPLAY] Saved replay: %s", std::filesystem::relative(out_path, g_data_dir).string().c_str());
             kz_ws_clear_replay_fetch_pending(mapname.c_str());
+            kz_ws_clear_replay_pro_upgrade_failed(mapname.c_str());
             {
                 std::lock_guard<std::mutex> lock(g_replay_download_retry_mtx);
                 g_replay_download_retries.erase(
@@ -698,6 +753,10 @@ std::function<void()> kz_ws_ack_error(JSON_Object* obj)
     else if (msg_type == WSMsgOut::GET_REPLAY)
     {
         const char* map_name = json_object_dotget_string(json_value_get_object(stored_val), "data.map_name");
+        if (map_name && map_name[0] && kz_ws_map_has_pro_wr() && !kz_ws_local_has_pro_replay(map_name))
+        {
+            g_replay_pro_upgrade_failed.insert(map_name);
+        }
         kz_ws_clear_replay_fetch_pending(map_name);
     }
     json_value_free(stored_val);
@@ -1005,7 +1064,7 @@ std::function<void()> kz_ws_ack_file_ack(JSON_Object* obj)
             return [mapname]() {
                 if (FStrEq(mapname.c_str(), STRING(gpGlobals->mapname)))
                 {
-                    std::filesystem::path file = kz_pb_find_fastest(mapname.c_str());
+                    std::filesystem::path file = kz_pb_find_sr_replay(mapname.c_str());
                     if (!file.empty())
                     {
                         if (!g_pb_bot_data || !FStrEq(file.filename().string().c_str(), g_pb_bot_data->filepath.filename().string().c_str()))
@@ -1058,6 +1117,13 @@ std::function<void()> kz_ws_ack_get_replay(JSON_Object* obj)
     if (!kz_ws_valid_replay_segment(map_name) || !kz_ws_valid_replay_segment(local_uid))
     {
         kz_log(&g_ws_log, "[GET_REPLAY_ACK] Invalid map_name or local_uid.");
+        kz_ws_clear_replay_fetch_pending(map_name);
+        return nullptr;
+    }
+    if (kz_ws_map_has_pro_wr() && local_uid[0] == '1' && local_uid[1] == '_')
+    {
+        kz_log(&g_ws_log, "[GET_REPLAY_ACK] Ignoring nub replay for map=%s while pro WR exists.", map_name);
+        g_replay_pro_upgrade_failed.insert(map_name);
         kz_ws_clear_replay_fetch_pending(map_name);
         return nullptr;
     }

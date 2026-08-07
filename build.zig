@@ -62,7 +62,7 @@ fn getBuildDate(b: *std.Build) []const u8 {
 
     const date = std.mem.trimRight(u8, res.stdout, "\r\n");
     if (date.len == 0) return "unknown";
-    return b.dupe(u8, date) catch return "unknown";
+    return b.fmt("{s}", .{date});
 }
 fn getGitVersion(b: *std.Build) []const u8 {
 

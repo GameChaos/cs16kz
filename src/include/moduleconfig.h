@@ -41,11 +41,13 @@
 // If you want the module not to be reloaded on mapchange, remove / comment out the next line
 //#define MODULE_RELOAD_ON_MAPCHANGE
 
+#ifndef MODULE_DATE
 #ifdef __DATE__
 #define MODULE_DATE __DATE__
 #else // __DATE__
 #define MODULE_DATE "Unknown"
 #endif // __DATE__
+#endif // MODULE_DATE
 
 // metamod plugin?
 #define USE_METAMOD

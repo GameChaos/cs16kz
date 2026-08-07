@@ -54,6 +54,16 @@ fn hashFilesInSrc(allocator: std.mem.Allocator) ![]const u8 {
     const hex_chars = std.fmt.bytesToHex(digest, .lower);
     return try std.fmt.allocPrint(allocator, "\"{s}\"", .{&hex_chars});
 }
+fn getBuildDate(b: *std.Build) []const u8 {
+    const res = std.process.Child.run(.{
+        .allocator = b.allocator,
+        .argv = &.{ "git", "log", "-1", "--format=%cs", "--date=short" },
+    }) catch return "unknown";
+
+    const date = std.mem.trimRight(u8, res.stdout, "\r\n");
+    if (date.len == 0) return "unknown";
+    return b.dupe(u8, date) catch return "unknown";
+}
 fn getGitVersion(b: *std.Build) []const u8 {
 
     const desc_res = std.process.Child.run(.{
@@ -381,6 +391,9 @@ pub fn build(b: *std.Build) !void
 	lib.root_module.addCMacro("MODULE_VERSION_MINOR", minor);
 	lib.root_module.addCMacro("MODULE_VERSION_PATCH", patch);
 	lib.root_module.addCMacro("MODULE_VERSION", b.fmt("\"{s}\"", .{full_version}));
+
+	const build_date = getBuildDate(b);
+	lib.root_module.addCMacro("MODULE_DATE", b.fmt("\"{s}\"", .{build_date}));
 
 	std.debug.print(">>> Compiled version: \"{s}\" <<<\n", .{full_version});
 	std.debug.print(">>> Compiled checksum: {s} <<<\n", .{hash});

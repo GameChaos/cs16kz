@@ -13,18 +13,18 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 $Exe = Join-Path $OutDir "kz_global_api_tests.exe"
 $Sources = @(
-    "src/kz_path_validate.cpp",
-    "src/krp_header_validate.cpp",
-    "src/kz_replay_uid.cpp",
-    "src/test/test_main.cpp",
-    "src/test/path_validate_test.cpp",
-    "src/test/krp_validate_test.cpp",
-    "src/test/replay_uid_test.cpp"
+    "src/kz_global_api/kz_path_validate.cpp",
+    "src/kz_global_api/krp_header_validate.cpp",
+    "src/kz_global_api/kz_replay_uid.cpp",
+    "src/kz_global_api/test/test_main.cpp",
+    "src/kz_global_api/test/path_validate_test.cpp",
+    "src/kz_global_api/test/krp_validate_test.cpp",
+    "src/kz_global_api/test/replay_uid_test.cpp"
 ) | ForEach-Object { Join-Path $Root $_ }
 
 Push-Location $Root
 try {
-    & $Zig c++ -std=c++17 -Isrc/include @Sources -o $Exe
+    & $Zig c++ -std=c++17 -Isrc/kz_global_api/include @Sources -o $Exe
     & $Exe
 }
 finally {

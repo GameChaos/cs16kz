@@ -4,10 +4,10 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Md5 = std.crypto.hash.Md5;
 
-fn hashFilesInSrc(allocator: std.mem.Allocator) ![]const u8 {
+fn hashFilesInDir(allocator: std.mem.Allocator, dir_path: []const u8) ![]const u8 {
     var md5 = std.crypto.hash.Md5.init(.{});
 
-    var src_dir = try std.fs.cwd().openDir("src", .{ .iterate = true });
+    var src_dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
     defer src_dir.close();
 
     var walker = try src_dir.walk(allocator);
@@ -112,9 +112,9 @@ fn buildHostUnitTests(b: *std.Build) !void {
             .optimize = .Debug,
         }),
     });
-    test_exe.root_module.addIncludePath(b.path("src/include"));
+    test_exe.root_module.addIncludePath(b.path("src/kz_global_api/include"));
     test_exe.addCSourceFiles(.{
-        .root = b.path("src"),
+        .root = b.path("src/kz_global_api"),
         .files = &.{
             "kz_path_validate.cpp",
             "krp_header_validate.cpp",
@@ -374,7 +374,7 @@ pub fn build(b: *std.Build) !void
 	lib.root_module.addCMacro("HAVE_STDINT_H", "");
 	lib.root_module.addCMacro("g_rehlds_available", "RehldsApi");
 
-	const hash = try hashFilesInSrc(b.allocator);
+	const hash = try hashFilesInDir(b.allocator, "src/kz_global_api");
 	lib.root_module.addCMacro("MODULE_CHECKSUM", hash);
 	defer b.allocator.free(hash);
 
@@ -456,7 +456,8 @@ pub fn build(b: *std.Build) !void
 	
 	lib.addIncludePath(b.path("deps/sdk/amxmodx/public/resdk"));
 	lib.addIncludePath(b.path("deps/sdk/amxmodx/public"));
-	lib.addIncludePath(b.path("src/include"));
+	lib.addIncludePath(b.path("src/shared"));
+	lib.addIncludePath(b.path("src/kz_global_api/include"));
 	lib.addIncludePath(dep_zstd.path("lib"));
 	lib.addIncludePath(dep_ixwebsocket.path(""));
 	lib.addIncludePath(dep_metamod.path("metamod"));
@@ -498,10 +499,20 @@ pub fn build(b: *std.Build) !void
 		try cflags.append(b.allocator, "-fpermissive");
 	}
 	
+	// Shared AMXX/Metamod glue (compiled per-module against that module's moduleconfig.h).
 	lib.addCSourceFiles(.{
-		.root = b.path("src/"),
+		.root = b.path("src/shared"),
 		.files = &.{
 			"amxxmodule.cpp",
+			"mod_rehlds_api.cpp",
+		},
+		.flags = cflags.items,
+	});
+
+	// kz_global_api module sources.
+	lib.addCSourceFiles(.{
+		.root = b.path("src/kz_global_api"),
+		.files = &.{
 			"krp_format.cpp",
 			"krp_header_validate.cpp",
 			"kz_basic_ac.cpp",
@@ -516,15 +527,97 @@ pub fn build(b: *std.Build) !void
 			"kz_ws.cpp",
 			"kz_ws_msgs.cpp",
 			"main.cpp",
-			"mod_rehlds_api.cpp",
 		},
+		.flags = cflags.items,
+	});
+
+	// =========================================================================================================
+	// kz_base -- second AMXX/Metamod module, built as its own artifact (2nd binary).
+	//
+	// Shares the AMXX glue (amxxmodule.cpp) and the top-level SDK headers with kz_global_api, but compiles
+	// against its own src/kz_base/include/moduleconfig.h and its own main.cpp. It intentionally links none of
+	// the heavy deps (websocket / sqlite / zstd / parson); add them here as the module grows.
+	// =========================================================================================================
+	const kz_base = b.addLibrary(.{
+		.name = if (target.result.os.tag == .linux) "kz_base_amxx_i386" else "kz_base_amxx",
+		.linkage = .dynamic,
+		.root_module = b.createModule(.{
+			.target = target,
+			.optimize = optimise,
+			.link_libc = true,
+		}),
+	});
+
+	const kz_base_hash = try hashFilesInDir(b.allocator, "src/kz_base");
+	defer b.allocator.free(kz_base_hash);
+	kz_base.root_module.addCMacro("MODULE_CHECKSUM", kz_base_hash);
+	kz_base.root_module.addCMacro("MODULE_VERSION_MAJOR", major);
+	kz_base.root_module.addCMacro("MODULE_VERSION_MINOR", minor);
+	kz_base.root_module.addCMacro("MODULE_VERSION_PATCH", patch);
+	kz_base.root_module.addCMacro("MODULE_VERSION", b.fmt("\"{s}\"", .{full_version}));
+	kz_base.root_module.addCMacro("MODULE_DATE", b.fmt("\"{s}\"", .{build_date}));
+
+	if (target.result.os.tag == .windows)
+	{
+		if (comptime builtin.target.os.tag != .windows)
+		{
+			// Fixes windows cross compilation on linux (see the kz_global_api block above).
+			const windows_h_path = b.pathJoin(&[_][]const u8{std.fs.path.dirname(b.graph.zig_exe) orelse unreachable, "lib/libc/include/any-windows-any/windows.h"});
+			var writeFile = b.addWriteFiles();
+			_ = writeFile.addCopyFile(.{.cwd_relative = windows_h_path}, "Windows.h");
+			kz_base.addIncludePath(writeFile.getDirectory());
+		}
+
+		kz_base.root_module.addCMacro("WIN32", "");
+		kz_base.root_module.addCMacro("_WINDOWS", "");
+		kz_base.root_module.addCMacro("CBASE_DLLEXPORT", "__declspec(dllexport)");
+		kz_base.linkSystemLibrary("ws2_32");
+	}
+	else if (target.result.os.tag == .linux)
+	{
+		kz_base.root_module.addSystemIncludePath(.{.cwd_relative = "/usr/include/"});
+
+		kz_base.root_module.addCMacro("linux", "");
+		kz_base.root_module.addCMacro("LINUX", "");
+		kz_base.root_module.addCMacro("POSIX", "");
+		kz_base.root_module.addCMacro("_LINUX", "");
+		kz_base.linkSystemLibrary("dl");
+		kz_base.linkSystemLibrary("pthread");
+	}
+
+	kz_base.addIncludePath(b.path("deps/sdk/amxmodx/public/resdk"));
+	kz_base.addIncludePath(b.path("deps/sdk/amxmodx/public"));
+	kz_base.addIncludePath(b.path("src/shared"));
+	kz_base.addIncludePath(b.path("src/kz_base/include"));
+	kz_base.addIncludePath(dep_metamod.path("metamod"));
+	kz_base.addIncludePath(dep_hlsdk.path(""));
+	kz_base.addIncludePath(dep_hlsdk.path("common"));
+	kz_base.addIncludePath(dep_hlsdk.path("dlls"));
+	kz_base.addIncludePath(dep_hlsdk.path("engine"));
+	kz_base.addIncludePath(dep_hlsdk.path("game_shared"));
+	kz_base.addIncludePath(dep_hlsdk.path("public"));
+	kz_base.addIncludePath(dep_hlsdk.path("pm_shared"));
+	kz_base.linkLibCpp();
+
+	// Shared AMXX/Metamod glue, compiled against kz_base's moduleconfig.h.
+	kz_base.addCSourceFiles(.{
+		.root = b.path("src/shared"),
+		.files = &.{"amxxmodule.cpp"},
+		.flags = cflags.items,
+	});
+	// kz_base module sources.
+	kz_base.addCSourceFiles(.{
+		.root = b.path("src/kz_base"),
+		.files = &.{"main.cpp"},
 		.flags = cflags.items,
 	});
 
         var cdb_targets = std.ArrayListUnmanaged(*std.Build.Step.Compile){};
         try cdb_targets.append(b.allocator, lib);
+        try cdb_targets.append(b.allocator, kz_base);
         const zcc = @import("compile_commands");
         _ = zcc.createStep(b, "cdb", try cdb_targets.toOwnedSlice(b.allocator));
 
 	b.installArtifact(lib);
+	b.installArtifact(kz_base);
 }

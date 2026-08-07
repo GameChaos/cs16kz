@@ -4,133 +4,145 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const Md5 = std.crypto.hash.Md5;
 
-fn hashFilesInDir(allocator: std.mem.Allocator, dir_path: []const u8) ![]const u8 {
-    var md5 = std.crypto.hash.Md5.init(.{});
+/// Version strings derived once from git.
+const Versions = struct {
+    full: []const u8,
+    major: []const u8,
+    minor: []const u8,
+    patch: []const u8,
+    date: []const u8,
+    commit_url: []const u8,
+};
 
-    var src_dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
-    defer src_dir.close();
+/// AMXX/Metamod glue every module compiles against its own moduleconfig.h.
+const shared_glue_sources = &[_][]const u8{
+    "amxxmodule.cpp",
+    "mod_rehlds_api.cpp",
+};
 
-    var walker = try src_dir.walk(allocator);
-    defer walker.deinit();
+/// One AMXX module to build.
+const ModuleOptions = struct {
+    /// Base artifact name; becomes `<name>_amxx` (Windows) / `<name>_amxx_i386` (Linux).
+    name: []const u8,
+    /// Module source dir, e.g. "src/kz_global_api"; its `include/` is added and its tree hashed.
+    dir: []const u8,
+    /// Module source files, relative to `dir`.
+    sources: []const []const u8,
+};
 
+/// Everything shared across AMXX modules. Populate once, then call `addModule` per module.
+const ModuleContext = struct {
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimise: std.builtin.OptimizeMode,
+    versions: Versions,
+    cflags: []const []const u8,
+    metamod: *std.Build.Dependency,
+    hlsdk: *std.Build.Dependency,
+    memtools: *std.Build.Step.Compile,
 
-    var file_paths: std.ArrayList([]const u8) = .empty;
-    defer {
-        for (file_paths.items) |p| allocator.free(p);
+    fn addModule(ctx: ModuleContext, opts: ModuleOptions) !*std.Build.Step.Compile {
+        const b = ctx.b;
+        const is_linux = ctx.target.result.os.tag == .linux;
 
-        file_paths.deinit(allocator);
-    }
+        // AMXX expects <name>_amxx_i386.so (Linux) / <name>_amxx.dll (Windows) -- no "lib" prefix.
+        const art_name = if (is_linux)
+            b.fmt("{s}_amxx_i386", .{opts.name})
+        else
+            b.fmt("{s}_amxx", .{opts.name});
 
-    while (try walker.next()) |entry| {
-        if (entry.kind == .file) {
-            const path_copy = try allocator.dupe(u8, entry.path);
-            try file_paths.append(allocator, path_copy);
-        }
-    }
-
-    std.mem.sort([]const u8, file_paths.items, {}, struct {
-        fn less(_: void, a: []const u8, b: []const u8) bool {
-            return std.mem.lessThan(u8, a, b);
-        }
-    }.less);
-
-    for (file_paths.items) |file_path| { 
-        const file = try src_dir.openFile(file_path, .{});
-        defer file.close();
-
-        md5.update(file_path);
-
-        var buffer: [4096]u8 = undefined;
-        while (true) {
-            const bytes_read = try file.read(&buffer);
-            if (bytes_read == 0) break;
-            md5.update(buffer[0..bytes_read]);
-        }
-    }
-
-    var digest: [std.crypto.hash.Md5.digest_length]u8 = undefined;
-    md5.final(&digest);
-
-    const hex_chars = std.fmt.bytesToHex(digest, .lower);
-    return try std.fmt.allocPrint(allocator, "\"{s}\"", .{&hex_chars});
-}
-fn getBuildDate(b: *std.Build) []const u8 {
-    const res = std.process.Child.run(.{
-        .allocator = b.allocator,
-        .argv = &.{ "git", "log", "-1", "--format=%cs", "--date=short" },
-    }) catch return "unknown";
-
-    const date = std.mem.trimRight(u8, res.stdout, "\r\n");
-    if (date.len == 0) return "unknown";
-    return b.fmt("{s}", .{date});
-}
-fn getGitVersion(b: *std.Build) []const u8 {
-
-    const desc_res = std.process.Child.run(.{
-        .allocator = b.allocator,
-        .argv = &.{ "git", "describe", "--tags", "--always", "--abbrev=7" },
-    }) catch return "0.1.0-unknown";
-
-
-    const status_res = std.process.Child.run(.{
-        .allocator = b.allocator,
-        .argv = &.{ "git", "status", "--porcelain" },
-    }) catch return "0.1.0-unknown";
-
-    var tag_out = std.mem.trimRight(u8, desc_res.stdout, "\r\n");
-    if (tag_out.len > 0 and tag_out[0] == 'v') tag_out = tag_out[1..];
-
-    const clean_status = std.mem.trimRight(u8, status_res.stdout, "\r\n ");
-    const is_dirty = clean_status.len > 0;
-
-    if (!std.mem.containsAtLeast(u8, tag_out, 1, "-g")) {
-        const hash_res = std.process.Child.run(.{
-            .allocator = b.allocator,
-            .argv = &.{ "git", "rev-parse", "--short=7", "HEAD" },
-        }) catch return "0.1.0-unknown";
-
-        const hash_out = std.mem.trimRight(u8, hash_res.stdout, "\r\n");
-
-        return b.fmt("{s}-g{s}{s}", .{
-            tag_out,
-            hash_out,
-            if (is_dirty) "-dirty" else ""
+        const lib = b.addLibrary(.{
+            .name = art_name,
+            .linkage = .dynamic,
+            .root_module = b.createModule(.{
+                .target = ctx.target,
+                .optimize = ctx.optimise,
+                .link_libc = true,
+            }),
         });
+
+        lib.root_module.addCMacro("JIT", "");
+        lib.root_module.addCMacro("ASM32", "");
+        lib.root_module.addCMacro("HAVE_STDINT_H", "");
+        lib.root_module.addCMacro("g_rehlds_available", "RehldsApi");
+
+        try ctx.addVersionMacros(lib, opts);
+        ctx.addPlatformConfig(lib);
+        ctx.addSdkIncludePaths(lib, opts.dir);
+
+        lib.linkLibrary(ctx.memtools);
+        lib.addCSourceFiles(.{ .root = b.path("src/shared"), .files = shared_glue_sources, .flags = ctx.cflags });
+        lib.addCSourceFiles(.{ .root = b.path(opts.dir), .files = opts.sources, .flags = ctx.cflags });
+
+        // Install under the AMXX filename directly (Zig would otherwise prefix "lib" on the .so).
+        const install = b.addInstallArtifact(lib, .{
+            .dest_sub_path = b.fmt("{s}{s}", .{ art_name, if (is_linux) ".so" else ".dll" }),
+        });
+        b.getInstallStep().dependOn(&install.step);
+
+        return lib;
     }
 
-    return b.fmt("{s}{s}", .{
-        tag_out,
-        if (is_dirty and !std.mem.endsWith(u8, tag_out, "-dirty")) "-dirty" else ""
-    });
-}
+    fn addVersionMacros(ctx: ModuleContext, lib: *std.Build.Step.Compile, opts: ModuleOptions) !void {
+        const b = ctx.b;
+        const v = ctx.versions;
 
-fn buildHostUnitTests(b: *std.Build) !void {
-    const test_exe = b.addExecutable(.{
-        .name = "kz_global_api_tests",
-        .root_module = b.createModule(.{
-            .target = b.graph.host,
-            .optimize = .Debug,
-        }),
-    });
-    test_exe.root_module.addIncludePath(b.path("src/kz_global_api/include"));
-    test_exe.addCSourceFiles(.{
-        .root = b.path("src/kz_global_api"),
-        .files = &.{
-            "kz_path_validate.cpp",
-            "krp_header_validate.cpp",
-            "kz_replay_uid.cpp",
-            "test/test_main.cpp",
-            "test/path_validate_test.cpp",
-            "test/krp_validate_test.cpp",
-            "test/replay_uid_test.cpp",
-        },
-        .flags = &.{"-std=c++17"},
-    });
-    test_exe.linkLibCpp();
-    const run_test = b.addRunArtifact(test_exe);
-    const test_step = b.step("test", "Run host-side unit tests");
-    test_step.dependOn(&run_test.step);
-}
+        const checksum = try hashFilesInDir(b.allocator, opts.dir);
+        lib.root_module.addCMacro("MODULE_CHECKSUM", b.fmt("\"{s}\"", .{checksum}));
+        lib.root_module.addCMacro("MODULE_VERSION_MAJOR", v.major);
+        lib.root_module.addCMacro("MODULE_VERSION_MINOR", v.minor);
+        lib.root_module.addCMacro("MODULE_VERSION_PATCH", v.patch);
+        lib.root_module.addCMacro("MODULE_VERSION", b.fmt("\"{s}\"", .{v.full}));
+        lib.root_module.addCMacro("MODULE_COMMIT_URL", b.fmt("\"{s}\"", .{v.commit_url}));
+        lib.root_module.addCMacro("MODULE_DATE", b.fmt("\"{s}\"", .{v.date}));
+        std.debug.print("  {s:<14} {s:<26} md5 {s}\n", .{ opts.name, v.full, checksum });
+    }
+
+    fn addPlatformConfig(ctx: ModuleContext, lib: *std.Build.Step.Compile) void {
+        switch (ctx.target.result.os.tag) {
+            .windows => {
+                if (comptime builtin.target.os.tag != .windows) addWindowsHShim(ctx.b, lib);
+                lib.root_module.addCMacro("WIN32", "");
+                lib.root_module.addCMacro("_WINDOWS", "");
+                lib.root_module.addCMacro("CBASE_DLLEXPORT", "__declspec(dllexport)");
+                lib.linkSystemLibrary("ws2_32");
+            },
+            .linux => {
+                if (std.fs.accessAbsolute("/usr/lib32/", .{})) {
+                    lib.root_module.addLibraryPath(.{ .cwd_relative = "/usr/lib32/" });
+                } else |_| {}
+                if (std.fs.accessAbsolute("/usr/lib/i386-linux-gnu/", .{})) {
+                    lib.root_module.addLibraryPath(.{ .cwd_relative = "/usr/lib/i386-linux-gnu/" });
+                } else |_| {}
+                lib.root_module.addSystemIncludePath(.{ .cwd_relative = "/usr/include/" });
+                lib.root_module.addCMacro("linux", "");
+                lib.root_module.addCMacro("LINUX", "");
+                lib.root_module.addCMacro("POSIX", "");
+                lib.root_module.addCMacro("_LINUX", "");
+                lib.linkSystemLibrary("pthread");
+                lib.linkSystemLibrary("dl");
+            },
+            else => unreachable,
+        }
+    }
+
+    fn addSdkIncludePaths(ctx: ModuleContext, lib: *std.Build.Step.Compile, dir: []const u8) void {
+        const b = ctx.b;
+        lib.addIncludePath(b.path("deps/sdk/amxmodx/public/resdk"));
+        lib.addIncludePath(b.path("deps/sdk/amxmodx/public"));
+        lib.addIncludePath(b.path("src/shared"));
+        lib.addIncludePath(b.path(b.fmt("{s}/include", .{dir})));
+        lib.addIncludePath(ctx.metamod.path("metamod"));
+        lib.addIncludePath(ctx.hlsdk.path(""));
+        lib.addIncludePath(ctx.hlsdk.path("common"));
+        lib.addIncludePath(ctx.hlsdk.path("dlls"));
+        lib.addIncludePath(ctx.hlsdk.path("engine"));
+        lib.addIncludePath(ctx.hlsdk.path("game_shared"));
+        lib.addIncludePath(ctx.hlsdk.path("public"));
+        lib.addIncludePath(ctx.hlsdk.path("pm_shared"));
+        lib.linkLibCpp();
+    }
+};
 
 pub fn build(b: *std.Build) !void
 {
@@ -140,27 +152,27 @@ pub fn build(b: *std.Build) !void
     if (test_only) return;
 
     const target = b.standardTargetOptions(.{});
-	
+
 	if (target.result.os.tag != .linux and target.result.os.tag != .windows)
 	{
 		std.debug.print("{} is not supported as a build target.\n", .{target.result.os.tag});
 		return;
 	}
-	
+
 	if (target.result.cpu.arch != .x86)
 	{
 		std.debug.print("Only x86 is supported as a build target.\n", .{});
 		return;
 	}
-	
+
 	const optimise = b.standardOptimizeOption(.{});
-	
+
 	// parson
 	const dep_parson = b.dependency("parson", .{
 		.target = target,
 		.optimize = .ReleaseFast,
 	});
-	
+
 	const parson = b.addLibrary(.{
 		.name = "parson",
 		.root_module = b.createModule(.{
@@ -169,23 +181,23 @@ pub fn build(b: *std.Build) !void
 			.link_libc = true,
 		}),
 	});
-	
+
 	parson.addCSourceFile(.{
 		.file = dep_parson.path("parson.c"),
 		.flags = &.{"-std=c89"},
 	});
-	
+
 	parson.addIncludePath(dep_parson.path(""));
 	parson.linkLibC();
-	
+
 	parson.installHeadersDirectory(dep_parson.path(""), "parson", .{});
-	
-	// sqlitecpp
+
+	// sqlitecpp (bundles sqlite3/sqlite3.c, so no separate system sqlite3 link is needed)
 	const dep_sqlitecpp = b.dependency("sqlitecpp", .{
 		.target = target,
 		.optimize = .ReleaseFast,
 	});
-	
+
 	const sqlitecpp = b.addLibrary(.{
 		.name = "sqlitecpp",
 		.root_module = b.createModule(.{
@@ -194,10 +206,10 @@ pub fn build(b: *std.Build) !void
 			.link_libc = true,
 		}),
 	});
-	
+
 	sqlitecpp.addIncludePath(dep_sqlitecpp.path("include"));
 	sqlitecpp.addIncludePath(dep_sqlitecpp.path("sqlite3"));
-	
+
 	sqlitecpp.addCSourceFiles(.{
 		.root = dep_sqlitecpp.path(""),
 		.files = &.{
@@ -211,37 +223,31 @@ pub fn build(b: *std.Build) !void
 			"sqlite3/sqlite3.c",
 		}
 	});
-	
+
 	sqlitecpp.root_module.addCMacro("SQLITE_ENABLE_COLUMN_METADATA", "");
 	sqlitecpp.linkLibC();
 	sqlitecpp.linkLibCpp();
-	
-	
+
 	// mbedtls
 	const dep_mbedtls = b.dependency("mbedtls", .{
 		.target = target,
 		.optimize = .ReleaseFast,
 	});
-	
+
 	const dep_mbedtls_c = dep_mbedtls.builder.dependency("mbedtls", .{});
-	
+
 	// zstd
 	const dep_zstd = b.dependency("zstd", .{
 		.target = target,
 		.optimize = .ReleaseFast,
 	});
-	
-	// const dep_zstd_c = dep_mbedtls.builder.dependency("zstd", .{});
-	
-	// ixwebsocket
-	
+
+	// ixwebsocket (USE_TLS via mbedtls)
 	const dep_ixwebsocket = b.dependency("ixwebsocket", .{
 		.target = target,
 		.optimize = .ReleaseFast,
 	});
-	
-	// USE_TLS ON
-	// USE_ZLIB ON
+
 	const ixwebsocket = b.addLibrary(.{
 		.name = "ixwebsocket",
 		.root_module = b.createModule(.{
@@ -250,7 +256,7 @@ pub fn build(b: *std.Build) !void
 			.link_libc = true,
 		}),
 	});
-	
+
 	ixwebsocket.addCSourceFiles(.{
 		.root = dep_ixwebsocket.path(""),
 		.files = &.{
@@ -290,25 +296,23 @@ pub fn build(b: *std.Build) !void
 			"ixwebsocket/IXWebSocketProxyServer.cpp",
 			"ixwebsocket/IXWebSocketServer.cpp",
 			"ixwebsocket/IXWebSocketTransport.cpp",
-			
-			// USE_TLS > USE_MBED_TLS
 			"ixwebsocket/IXSocketMbedTLS.cpp",
 		}
 	});
-	
+
 	var mbedtlsVersionGreaterThan3: bool = true;
-	
+
 	dep_mbedtls_c.path("").getPath3(b, null).access("include/mbedtls/build_info.h", .{}) catch {
 		mbedtlsVersionGreaterThan3 = false;
 	};
-	
+
 	ixwebsocket.root_module.addCMacro("IXWEBSOCKET_USE_TLS", "");
 	ixwebsocket.root_module.addCMacro("IXWEBSOCKET_USE_MBED_TLS", "");
 	if (mbedtlsVersionGreaterThan3)
 	{
 		ixwebsocket.root_module.addCMacro("IXWEBSOCKET_USE_MBED_TLS_MIN_VERSION_3", "");
 	}
-	
+
 	ixwebsocket.addIncludePath(dep_ixwebsocket.path(""));
 	ixwebsocket.addIncludePath(dep_ixwebsocket.path("ixwebsocket/"));
 	ixwebsocket.addIncludePath(dep_mbedtls.path(""));
@@ -319,17 +323,17 @@ pub fn build(b: *std.Build) !void
 	ixwebsocket.linkLibC();
 	ixwebsocket.linkLibCpp();
 	ixwebsocket.linkLibrary(dep_mbedtls.artifact("mbedtls"));
-	
+
 	// SPSCQueue
 	const dep_spscqueue = b.dependency("spscqueue", .{});
-	
+
 	// metamod
 	const dep_metamod = b.dependency("metamod", .{});
-	
+
 	// hlsdk
 	const dep_hlsdk = b.dependency("hlsdk", .{});
 
-	// memtools (amxx)
+	// memtools (amxx) -- shared by every module
 	const memtools = b.addLibrary(.{
 		.name = "memtools",
 		.root_module = b.createModule(.{
@@ -356,163 +360,22 @@ pub fn build(b: *std.Build) !void
 	memtools.linkLibC();
 	memtools.linkLibCpp();
 
-	// the lib!!!!
-	
-	const lib = b.addLibrary(.{
-		.name = if (target.result.os.tag == .linux) "kz_global_api_amxx_i386" else "kz_global_api_amxx",
-		.linkage = .dynamic,
-		.root_module = b.createModule(.{
-			.target = target,
-			.optimize = optimise,
-			.link_libc = true,
-		}),
-	});
-
-	
-	lib.root_module.addCMacro("JIT", "");
-	lib.root_module.addCMacro("ASM32", "");
-	lib.root_module.addCMacro("HAVE_STDINT_H", "");
-	lib.root_module.addCMacro("g_rehlds_available", "RehldsApi");
-
-	const hash = try hashFilesInDir(b.allocator, "src/kz_global_api");
-	lib.root_module.addCMacro("MODULE_CHECKSUM", hash);
-	defer b.allocator.free(hash);
-
-	const full_version = getGitVersion(b);
-	var tokenizer = std.mem.tokenizeScalar(u8, full_version, '.');
-	const major = tokenizer.next() orelse "0";
-	const minor = tokenizer.next() orelse "0";
-
-	const raw_patch = tokenizer.next() orelse "0";
-	var patch_tokenizer = std.mem.tokenizeScalar(u8, raw_patch, '-');
-	const patch = patch_tokenizer.next() orelse "0";
-
-	lib.root_module.addCMacro("MODULE_VERSION_MAJOR", major);
-	lib.root_module.addCMacro("MODULE_VERSION_MINOR", minor);
-	lib.root_module.addCMacro("MODULE_VERSION_PATCH", patch);
-	lib.root_module.addCMacro("MODULE_VERSION", b.fmt("\"{s}\"", .{full_version}));
-
-	const build_date = getBuildDate(b);
-	lib.root_module.addCMacro("MODULE_DATE", b.fmt("\"{s}\"", .{build_date}));
-
-	std.debug.print(">>> Compiled version: \"{s}\" <<<\n", .{full_version});
-	std.debug.print(">>> Compiled checksum: {s} <<<\n", .{hash});
-
-	lib.linkLibrary(parson);
-	lib.linkLibrary(sqlitecpp);
-	lib.linkLibrary(ixwebsocket);
-	lib.linkLibrary(memtools);
-	lib.linkLibrary(dep_zstd.artifact("zstd"));
-	
-	if (target.result.os.tag == .windows)
-	{
-		if (comptime builtin.target.os.tag != .windows)
-		{
-			// Fixes windows cross compilation on linux.
-			//  Amxmodx uses #include "Windows.h" like IDIOTS, so we
-			//  must copy the windows.h file capitalised style, because windows's filesystem
-			//  is case sensitive, while linux's (ext4 etc) are not.
-			const windows_h_path = b.pathJoin(&[_][]const u8{std.fs.path.dirname(b.graph.zig_exe) orelse unreachable, "lib/libc/include/any-windows-any/windows.h"});
-			var writeFile = b.addWriteFiles();
-			_ = writeFile.addCopyFile(.{.cwd_relative = windows_h_path}, "Windows.h");
-			lib.addIncludePath(writeFile.getDirectory());
-		}
-		
-		lib.root_module.addCMacro("WIN32", "");
-		lib.root_module.addCMacro("_WINDOWS", "");
-		// HACK to get windows build to work
-		lib.root_module.addCMacro("CBASE_DLLEXPORT", "__declspec(dllexport)");
-		lib.linkSystemLibrary("ws2_32");
-		lib.linkSystemLibrary("mswsock");
-		lib.linkSystemLibrary("crypt32");
-	}
-	else if (target.result.os.tag == .linux)
-	{
-		if (std.fs.accessAbsolute("/usr/lib32/", .{}))
-		{
-			lib.root_module.addLibraryPath(.{.cwd_relative = "/usr/lib32/"});
-		}
-		else |_| undefined;
-		
-		if (std.fs.accessAbsolute("/usr/lib/i386-linux-gnu/", .{}))
-		{
-			lib.root_module.addLibraryPath(.{.cwd_relative = "/usr/lib/i386-linux-gnu/"});
-		}
-		else |_| undefined;
-		
-		lib.root_module.addSystemIncludePath(.{.cwd_relative = "/usr/include/"});
-		
-		lib.root_module.addCMacro("linux", "");
-		lib.root_module.addCMacro("LINUX", "");
-		lib.root_module.addCMacro("POSIX", "");
-		lib.root_module.addCMacro("_LINUX", "");
-		lib.linkSystemLibrary("sqlite3");
-		lib.linkSystemLibrary("ssl");
-		lib.linkSystemLibrary("crypto");
-		lib.linkSystemLibrary("z");
-		lib.linkSystemLibrary("pthread");
-		lib.linkSystemLibrary("dl");
-	}
-	
-	lib.addIncludePath(b.path("deps/sdk/amxmodx/public/resdk"));
-	lib.addIncludePath(b.path("deps/sdk/amxmodx/public"));
-	lib.addIncludePath(b.path("src/shared"));
-	lib.addIncludePath(b.path("src/kz_global_api/include"));
-	lib.addIncludePath(dep_zstd.path("lib"));
-	lib.addIncludePath(dep_ixwebsocket.path(""));
-	lib.addIncludePath(dep_metamod.path("metamod"));
-	lib.addIncludePath(dep_hlsdk.path(""));
-	lib.addIncludePath(dep_hlsdk.path("common"));
-	lib.addIncludePath(dep_hlsdk.path("dlls"));
-	lib.addIncludePath(dep_hlsdk.path("engine"));
-	lib.addIncludePath(dep_hlsdk.path("game_shared"));
-	lib.addIncludePath(dep_hlsdk.path("public"));
-	lib.addIncludePath(dep_hlsdk.path("pm_shared"));
-	lib.addIncludePath(dep_sqlitecpp.path("include/"));
-	lib.addIncludePath(dep_parson.path(""));
-	lib.addIncludePath(dep_spscqueue.path("include"));
-	lib.linkLibCpp();
-	
-	const cflagsBase = [_][]const u8{
-		"-std=c++17",
-		"-fno-sanitize=pointer-overflow", // fix for STRING() hlsdk macro
+	const ctx = ModuleContext{
+		.b = b,
+		.target = target,
+		.optimise = optimise,
+		.versions = computeVersions(b),
+		.cflags = try amxxCflags(b, target, optimise),
+		.metamod = dep_metamod,
+		.hlsdk = dep_hlsdk,
+		.memtools = memtools,
 	};
-	const cflagsWarnings = [_][]const u8{
-		// Enable warnings and escale to errors (zig doesnt catch warnings)
-		"-Wall", "-Wextra", "-Werror",
 
-		// Disable a bunch of hlsdk/amxx warnings
-		"-Wno-unused-parameter",
-		"-Wno-missing-field-initializers",  // (amxxmodule.cpp): missing field ... initializer
-		"-Wno-deprecated-copy",             // (dlls/vector.h): implicit copy assignment operator .. is deprecated
-	};
-	var cflags = std.ArrayList([]const u8).empty;
-	try cflags.appendSlice(b.allocator, &cflagsBase);
-	try cflags.appendSlice(b.allocator, &cflagsWarnings);
-
-	if (target.result.os.tag == .windows)
-	{
-		// UBSan recover mode is Windows-only: i386 Linux .so + libubsan_rt.a fails PIC linking.
-		try cflags.append(b.allocator, "-fsanitize-recover=undefined");
-		// HACK to get windows build to work
-		try cflags.append(b.allocator, "-Wno-macro-redefined");
-		try cflags.append(b.allocator, "-fpermissive");
-	}
-	
-	// Shared AMXX/Metamod glue (compiled per-module against that module's moduleconfig.h).
-	lib.addCSourceFiles(.{
-		.root = b.path("src/shared"),
-		.files = &.{
-			"amxxmodule.cpp",
-			"mod_rehlds_api.cpp",
-		},
-		.flags = cflags.items,
-	});
-
-	// kz_global_api module sources.
-	lib.addCSourceFiles(.{
-		.root = b.path("src/kz_global_api"),
-		.files = &.{
+	// kz_global_api -- main module: WebSocket client, SQLite storage, replay codecs, ReHLDS hooks.
+	const kz_global_api = try ctx.addModule(.{
+		.name = "kz_global_api",
+		.dir = "src/kz_global_api",
+		.sources = &.{
 			"krp_format.cpp",
 			"krp_header_validate.cpp",
 			"kz_basic_ac.cpp",
@@ -528,96 +391,272 @@ pub fn build(b: *std.Build) !void
 			"kz_ws_msgs.cpp",
 			"main.cpp",
 		},
-		.flags = cflags.items,
 	});
 
-	// =========================================================================================================
-	// kz_base -- second AMXX/Metamod module, built as its own artifact (2nd binary).
-	//
-	// Shares the AMXX glue (amxxmodule.cpp) and the top-level SDK headers with kz_global_api, but compiles
-	// against its own src/kz_base/include/moduleconfig.h and its own main.cpp. It intentionally links none of
-	// the heavy deps (websocket / sqlite / zstd / parson); add them here as the module grows.
-	// =========================================================================================================
-	const kz_base = b.addLibrary(.{
-		.name = if (target.result.os.tag == .linux) "kz_base_amxx_i386" else "kz_base_amxx",
-		.linkage = .dynamic,
-		.root_module = b.createModule(.{
-			.target = target,
-			.optimize = optimise,
-			.link_libc = true,
-		}),
-	});
+	kz_global_api.linkLibrary(parson);
+	kz_global_api.linkLibrary(sqlitecpp);
+	kz_global_api.linkLibrary(ixwebsocket);
+	kz_global_api.linkLibrary(dep_zstd.artifact("zstd"));
 
-	const kz_base_hash = try hashFilesInDir(b.allocator, "src/kz_base");
-	defer b.allocator.free(kz_base_hash);
-	kz_base.root_module.addCMacro("MODULE_CHECKSUM", kz_base_hash);
-	kz_base.root_module.addCMacro("MODULE_VERSION_MAJOR", major);
-	kz_base.root_module.addCMacro("MODULE_VERSION_MINOR", minor);
-	kz_base.root_module.addCMacro("MODULE_VERSION_PATCH", patch);
-	kz_base.root_module.addCMacro("MODULE_VERSION", b.fmt("\"{s}\"", .{full_version}));
-	kz_base.root_module.addCMacro("MODULE_DATE", b.fmt("\"{s}\"", .{build_date}));
+	kz_global_api.addIncludePath(dep_zstd.path("lib"));
+	kz_global_api.addIncludePath(dep_ixwebsocket.path(""));
+	kz_global_api.addIncludePath(dep_sqlitecpp.path("include/"));
+	kz_global_api.addIncludePath(dep_parson.path(""));
+	kz_global_api.addIncludePath(dep_spscqueue.path("include"));
 
 	if (target.result.os.tag == .windows)
 	{
-		if (comptime builtin.target.os.tag != .windows)
-		{
-			// Fixes windows cross compilation on linux (see the kz_global_api block above).
-			const windows_h_path = b.pathJoin(&[_][]const u8{std.fs.path.dirname(b.graph.zig_exe) orelse unreachable, "lib/libc/include/any-windows-any/windows.h"});
-			var writeFile = b.addWriteFiles();
-			_ = writeFile.addCopyFile(.{.cwd_relative = windows_h_path}, "Windows.h");
-			kz_base.addIncludePath(writeFile.getDirectory());
-		}
-
-		kz_base.root_module.addCMacro("WIN32", "");
-		kz_base.root_module.addCMacro("_WINDOWS", "");
-		kz_base.root_module.addCMacro("CBASE_DLLEXPORT", "__declspec(dllexport)");
-		kz_base.linkSystemLibrary("ws2_32");
+		kz_global_api.linkSystemLibrary("mswsock");
+		kz_global_api.linkSystemLibrary("crypt32");
 	}
 	else if (target.result.os.tag == .linux)
 	{
-		kz_base.root_module.addSystemIncludePath(.{.cwd_relative = "/usr/include/"});
-
-		kz_base.root_module.addCMacro("linux", "");
-		kz_base.root_module.addCMacro("LINUX", "");
-		kz_base.root_module.addCMacro("POSIX", "");
-		kz_base.root_module.addCMacro("_LINUX", "");
-		kz_base.linkSystemLibrary("dl");
-		kz_base.linkSystemLibrary("pthread");
+		kz_global_api.linkSystemLibrary("z");
 	}
 
-	kz_base.addIncludePath(b.path("deps/sdk/amxmodx/public/resdk"));
-	kz_base.addIncludePath(b.path("deps/sdk/amxmodx/public"));
-	kz_base.addIncludePath(b.path("src/shared"));
-	kz_base.addIncludePath(b.path("src/kz_base/include"));
-	kz_base.addIncludePath(dep_metamod.path("metamod"));
-	kz_base.addIncludePath(dep_hlsdk.path(""));
-	kz_base.addIncludePath(dep_hlsdk.path("common"));
-	kz_base.addIncludePath(dep_hlsdk.path("dlls"));
-	kz_base.addIncludePath(dep_hlsdk.path("engine"));
-	kz_base.addIncludePath(dep_hlsdk.path("game_shared"));
-	kz_base.addIncludePath(dep_hlsdk.path("public"));
-	kz_base.addIncludePath(dep_hlsdk.path("pm_shared"));
-	kz_base.linkLibCpp();
-
-	// Shared AMXX/Metamod glue, compiled against kz_base's moduleconfig.h.
-	kz_base.addCSourceFiles(.{
-		.root = b.path("src/shared"),
-		.files = &.{"amxxmodule.cpp"},
-		.flags = cflags.items,
-	});
-	// kz_base module sources.
-	kz_base.addCSourceFiles(.{
-		.root = b.path("src/kz_base"),
-		.files = &.{"main.cpp"},
-		.flags = cflags.items,
+	// kz_base -- second module (2nd binary). Shares the glue/SDK headers; links no heavy deps yet.
+	const kz_base = try ctx.addModule(.{
+		.name = "kz_base",
+		.dir = "src/kz_base",
+		.sources = &.{"main.cpp"},
 	});
 
-        var cdb_targets = std.ArrayListUnmanaged(*std.Build.Step.Compile){};
-        try cdb_targets.append(b.allocator, lib);
-        try cdb_targets.append(b.allocator, kz_base);
-        const zcc = @import("compile_commands");
-        _ = zcc.createStep(b, "cdb", try cdb_targets.toOwnedSlice(b.allocator));
+	var cdb_targets = std.ArrayListUnmanaged(*std.Build.Step.Compile){};
+	try cdb_targets.append(b.allocator, kz_global_api);
+	try cdb_targets.append(b.allocator, kz_base);
+	const zcc = @import("compile_commands");
+	_ = zcc.createStep(b, "cdb", try cdb_targets.toOwnedSlice(b.allocator));
+}
 
-	b.installArtifact(lib);
-	b.installArtifact(kz_base);
+fn hashFilesInDir(allocator: std.mem.Allocator, dir_path: []const u8) ![]const u8 {
+    var md5 = std.crypto.hash.Md5.init(.{});
+
+    var src_dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
+    defer src_dir.close();
+
+    var walker = try src_dir.walk(allocator);
+    defer walker.deinit();
+
+    var file_paths: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (file_paths.items) |p| allocator.free(p);
+        file_paths.deinit(allocator);
+    }
+
+    while (try walker.next()) |entry| {
+        if (entry.kind == .file) {
+            const path_copy = try allocator.dupe(u8, entry.path);
+            try file_paths.append(allocator, path_copy);
+        }
+    }
+
+    std.mem.sort([]const u8, file_paths.items, {}, struct {
+        fn less(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.less);
+
+    for (file_paths.items) |file_path| {
+        const file = try src_dir.openFile(file_path, .{});
+        defer file.close();
+
+        md5.update(file_path);
+
+        var buffer: [4096]u8 = undefined;
+        while (true) {
+            const bytes_read = try file.read(&buffer);
+            if (bytes_read == 0) break;
+            md5.update(buffer[0..bytes_read]);
+        }
+    }
+
+    var digest: [std.crypto.hash.Md5.digest_length]u8 = undefined;
+    md5.final(&digest);
+
+    const hex_chars = std.fmt.bytesToHex(digest, .lower);
+    return allocator.dupe(u8, &hex_chars);
+}
+
+fn getBuildDate(b: *std.Build) []const u8 {
+    const res = std.process.Child.run(.{
+        .allocator = b.allocator,
+        .argv = &.{ "git", "log", "-1", "--format=%cs", "--date=short" },
+    }) catch return "unknown";
+
+    const date = std.mem.trimRight(u8, res.stdout, "\r\n");
+    if (date.len == 0) return "unknown";
+    return b.fmt("{s}", .{date});
+}
+
+fn getGitCommit(b: *std.Build) []const u8 {
+    const res = std.process.Child.run(.{
+        .allocator = b.allocator,
+        .argv = &.{ "git", "rev-parse", "HEAD" },
+    }) catch return "unknown";
+
+    const commit = std.mem.trimRight(u8, res.stdout, "\r\n");
+    if (commit.len == 0) return "unknown";
+    return b.fmt("{s}", .{commit});
+}
+
+/// Web URL of the HEAD commit, derived from the `origin` remote (SSH forms normalised to https).
+/// Returns "unknown" if git or the remote is unavailable.
+fn getCommitUrl(b: *std.Build) []const u8 {
+    const commit = getGitCommit(b);
+    if (std.mem.eql(u8, commit, "unknown")) return "unknown";
+
+    const res = std.process.Child.run(.{
+        .allocator = b.allocator,
+        .argv = &.{ "git", "config", "--get", "remote.origin.url" },
+    }) catch return "unknown";
+
+    var remote = std.mem.trimRight(u8, res.stdout, "\r\n");
+    if (remote.len == 0) return "unknown";
+    if (std.mem.endsWith(u8, remote, ".git")) remote = remote[0 .. remote.len - 4];
+
+    // Normalise to https:  git@host:owner/repo  and  ssh://git@host/owner/repo  ->  https://host/owner/repo
+    const base = if (std.mem.startsWith(u8, remote, "git@")) blk: {
+        const rest = remote["git@".len..];
+        break :blk if (std.mem.indexOfScalar(u8, rest, ':')) |colon|
+            b.fmt("https://{s}/{s}", .{ rest[0..colon], rest[colon + 1 ..] })
+        else
+            b.fmt("https://{s}", .{rest});
+    } else if (std.mem.startsWith(u8, remote, "ssh://git@"))
+        b.fmt("https://{s}", .{remote["ssh://git@".len..]})
+    else
+        remote;
+
+    // Strip any "user:token@" credentials so they never end up baked into the binary.
+    return b.fmt("{s}/commit/{s}", .{ stripUrlUserinfo(b, base), commit });
+}
+
+/// Remove a `userinfo@` component (e.g. "user:token@") from a `scheme://` URL's authority.
+fn stripUrlUserinfo(b: *std.Build, url: []const u8) []const u8 {
+    const scheme = std.mem.indexOf(u8, url, "://") orelse return url;
+    const after = scheme + 3;
+    const rest = url[after..];
+    const authority_end = std.mem.indexOfScalar(u8, rest, '/') orelse rest.len;
+    const at = std.mem.indexOfScalar(u8, rest[0..authority_end], '@') orelse return url;
+    return b.fmt("{s}{s}", .{ url[0..after], rest[at + 1 ..] });
+}
+
+fn getGitVersion(b: *std.Build) []const u8 {
+    const desc_res = std.process.Child.run(.{
+        .allocator = b.allocator,
+        .argv = &.{ "git", "describe", "--tags", "--always", "--abbrev=7" },
+    }) catch return "0.1.0-unknown";
+
+    const status_res = std.process.Child.run(.{
+        .allocator = b.allocator,
+        .argv = &.{ "git", "status", "--porcelain" },
+    }) catch return "0.1.0-unknown";
+
+    var tag_out = std.mem.trimRight(u8, desc_res.stdout, "\r\n");
+    if (tag_out.len > 0 and tag_out[0] == 'v') tag_out = tag_out[1..];
+
+    const clean_status = std.mem.trimRight(u8, status_res.stdout, "\r\n ");
+    const is_dirty = clean_status.len > 0;
+
+    if (!std.mem.containsAtLeast(u8, tag_out, 1, "-g")) {
+        const hash_res = std.process.Child.run(.{
+            .allocator = b.allocator,
+            .argv = &.{ "git", "rev-parse", "--short=7", "HEAD" },
+        }) catch return "0.1.0-unknown";
+
+        const hash_out = std.mem.trimRight(u8, hash_res.stdout, "\r\n");
+
+        return b.fmt("{s}-g{s}{s}", .{ tag_out, hash_out, if (is_dirty) "-dirty" else "" });
+    }
+
+    return b.fmt("{s}{s}", .{
+        tag_out,
+        if (is_dirty and !std.mem.endsWith(u8, tag_out, "-dirty")) "-dirty" else ""
+    });
+}
+
+fn computeVersions(b: *std.Build) Versions {
+    const full = getGitVersion(b);
+
+    var tokenizer = std.mem.tokenizeScalar(u8, full, '.');
+    const major = tokenizer.next() orelse "0";
+    const minor = tokenizer.next() orelse "0";
+
+    const raw_patch = tokenizer.next() orelse "0";
+    var patch_tokenizer = std.mem.tokenizeScalar(u8, raw_patch, '-');
+    const patch = patch_tokenizer.next() orelse "0";
+
+    return .{ .full = full, .major = major, .minor = minor, .patch = patch, .date = getBuildDate(b), .commit_url = getCommitUrl(b) };
+}
+
+fn amxxCflags(b: *std.Build, target: std.Build.ResolvedTarget, optimise: std.builtin.OptimizeMode) ![]const []const u8 {
+    var cflags: std.ArrayList([]const u8) = .empty;
+    try cflags.appendSlice(b.allocator, &.{
+        "-std=c++17",
+        "-fno-strict-aliasing",           // HLSDK/pdata.h type-pun entity data through mismatched pointers; -O2+ strict aliasing miscompiles them
+        "-fno-sanitize=pointer-overflow", // HLSDK's STRING() (pStringBase + offset) is pointer arithmetic that trips its pointer-overflow check
+        "-Wall", "-Wextra", "-Werror",    // zig doesn't surface C warnings; make them hard errors
+        "-Wno-unused-parameter",
+        "-Wno-missing-field-initializers",
+        "-Wno-deprecated-copy",
+    });
+
+    if (target.result.os.tag == .windows) {
+        try cflags.appendSlice(b.allocator, &.{
+            "-fsanitize-recover=undefined", // Windows-only: i386 Linux .so + libubsan_rt.a fails PIC linking
+            "-Wno-macro-redefined",
+            "-fpermissive",
+        });
+    }
+
+    if (optimise == .ReleaseFast) {
+        try cflags.appendSlice(b.allocator, &.{
+            "-fomit-frame-pointer",        // free the frame-pointer register for general use
+            "-funroll-loops",              // unroll hot loops to cut per-iteration branch overhead
+            "-fno-rtti",                   // no typeid/dynamic_cast used: drop RTTI metadata
+            "-fno-semantic-interposition", // our own globals aren't interposed: allow inlining them in the .so
+            "-fvisibility=hidden",         // hide symbols by default (only AMXX exports stay visible), smaller GOT/PLT
+            "-fmerge-all-constants",       // fold identical constants to shrink the binary
+        });
+    }
+    return cflags.toOwnedSlice(b.allocator);
+}
+
+/// Copy the toolchain's lowercase `windows.h` to `Windows.h` so amxmodx's `#include "Windows.h"`
+/// resolves when cross-compiling from a case-sensitive host.
+fn addWindowsHShim(b: *std.Build, compile: *std.Build.Step.Compile) void {
+    const windows_h_path = b.pathJoin(&[_][]const u8{
+        std.fs.path.dirname(b.graph.zig_exe) orelse unreachable,
+        "lib/libc/include/any-windows-any/windows.h",
+    });
+    var write_file = b.addWriteFiles();
+    _ = write_file.addCopyFile(.{ .cwd_relative = windows_h_path }, "Windows.h");
+    compile.addIncludePath(write_file.getDirectory());
+}
+
+fn buildHostUnitTests(b: *std.Build) !void {
+    const test_exe = b.addExecutable(.{
+        .name = "kz_global_api_tests",
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+    test_exe.root_module.addIncludePath(b.path("src/kz_global_api/include"));
+    test_exe.addCSourceFiles(.{
+        .root = b.path("src/kz_global_api"),
+        .files = &.{
+            "kz_path_validate.cpp",
+            "krp_header_validate.cpp",
+            "kz_replay_uid.cpp",
+            "test/test_main.cpp",
+            "test/path_validate_test.cpp",
+            "test/krp_validate_test.cpp",
+            "test/replay_uid_test.cpp",
+        },
+        .flags = &.{"-std=c++17"},
+    });
+    test_exe.linkLibCpp();
+    const run_test = b.addRunArtifact(test_exe);
+    const test_step = b.step("test", "Run host-side unit tests");
+    test_step.dependOn(&run_test.step);
 }

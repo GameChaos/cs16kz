@@ -536,7 +536,8 @@ void kz_api_cmd(void)
     if (argc >= 2 && FStrEq(CMD_ARGV(1), "version"))
     {
         MF_PrintSrvConsole("[%s] version:  %s\n", MODULE_LOGTAG, MODULE_VERSION);
-        MF_PrintSrvConsole("[%s] checksum: %s\n\n", MODULE_LOGTAG, MODULE_CHECKSUM);
+        MF_PrintSrvConsole("[%s] checksum: %s\n", MODULE_LOGTAG, MODULE_CHECKSUM);
+        MF_PrintSrvConsole("[%s] commit:   %s\n\n", MODULE_LOGTAG, MODULE_COMMIT_URL);
         return;
     }
 

@@ -601,8 +601,13 @@ void kz_pb_parser_thread(void)
                     const char* ext = str_ext.c_str();
 
                     rewind(fp);
-                    fread(buffer.data(), 1, size, fp);
-                    
+                    if (fread(buffer.data(), 1, static_cast<size_t>(size), fp) != static_cast<size_t>(size))
+                    {
+                        kz_log(&g_pb_parse_log, "[PARSE] Short read (expected %ld bytes): %s", size, file->string().c_str());
+                        fclose(fp);
+                        g_pb_parse_queue.pop();
+                        continue;
+                    }
                     if (strcmp(ext, ".krpz") == 0)
                     {
                         parse_playback(pb_data, buffer, *file);

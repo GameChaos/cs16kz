@@ -462,7 +462,6 @@ pub fn build(b: *std.Build) !void
 	const cflagsBase = [_][]const u8{
 		"-std=c++17",
 		"-fno-sanitize=pointer-overflow", // fix for STRING() hlsdk macro
-		"-fsanitize-recover=undefined",   // dont crash :)
 	};
 	const cflagsWarnings = [_][]const u8{
 		// Enable warnings and escale to errors (zig doesnt catch warnings)
@@ -476,9 +475,11 @@ pub fn build(b: *std.Build) !void
 	var cflags = std.ArrayList([]const u8).empty;
 	try cflags.appendSlice(b.allocator, &cflagsBase);
 	try cflags.appendSlice(b.allocator, &cflagsWarnings);
-	
+
 	if (target.result.os.tag == .windows)
 	{
+		// UBSan recover mode is Windows-only: i386 Linux .so + libubsan_rt.a fails PIC linking.
+		try cflags.append(b.allocator, "-fsanitize-recover=undefined");
 		// HACK to get windows build to work
 		try cflags.append(b.allocator, "-Wno-macro-redefined");
 		try cflags.append(b.allocator, "-fpermissive");

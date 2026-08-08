@@ -879,10 +879,22 @@ std::function<void()> kz_ws_ack_player_join(JSON_Object* obj)
             return;
         }
 
+        const int action = kz_api_ban_action ? static_cast<int>(kz_api_ban_action->value) : 3;
+
+        if (action == 3)
+        {
+            g_players[indexOfEdict(pEntity)].no_submit = true;
+            return;
+        }
+
         char buff[192];
         snprintf(buff, sizeof(buff), "kick #%d \"You've been cross-community banned\"\n", GETPLAYERUSERID(pEntity));
         SERVER_COMMAND(buff);
 
+        if (action != 2)
+        {
+            return;
+        }
         if (!kz_ws_valid_steam_authid(szAuth))
         {
             kz_log(&g_ws_log, "[kz_ws_ack_player_join] Skipping banid: invalid steamid.");

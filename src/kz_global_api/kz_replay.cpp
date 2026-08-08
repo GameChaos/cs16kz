@@ -46,6 +46,11 @@ static void kz_rp_upload_thread(void);
 
 int kz_rp_run_started(int id) 
 {
+    if (g_players[id].no_submit)
+    {
+        return 0;
+    }
+
     krp_packet item = {};
     item.player_index = id;
     item.type = KRP_SIGNAL_START;
@@ -160,6 +165,13 @@ int kz_rp_run_rejected(int id, bool delete_file)
 
 int kz_rp_run_finished(int id, float time)
 {
+    if (g_players[id].no_submit)
+    {
+        // forward to _rejected() to make sure the replay file gets closed if no_submit was updated mid-run
+        kz_rp_run_rejected(id, true);
+        return 0;
+    }
+
     krp_packet item = {};
     item.player_index = id;
     item.type = KRP_SIGNAL_FINISH;

@@ -80,6 +80,7 @@ void FN_AMXX_ATTACH()
     kz_api_bot_team    = register_cvar("kz_api_bot_team", "1", FCVAR_EXTDLL | FCVAR_SPONLY);
     kz_api_bot_use_cmd = register_cvar("kz_api_bot_use_cmd", "0", FCVAR_EXTDLL | FCVAR_SPONLY);
     kz_api_allow_pause = register_cvar("kz_api_allow_pause", "0", FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_ban_action  = register_cvar("kz_api_ban_action",  "0", FCVAR_EXTDLL | FCVAR_SPONLY);
 
     REG_SVR_COMMAND("kz_api", kz_api_cmd);
     kz_api_add_natives();
@@ -312,6 +313,7 @@ void FN_ClientPutInServer_Post(edict_t* pEntity)
 {
     int id = ENTINDEX(pEntity);
     g_players[id].is_bot = MF_IsPlayerBot(id);
+    g_players[id].no_submit = false;
 
     if (g_initialized && !g_players[id].is_bot)
     {

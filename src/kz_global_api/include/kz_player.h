@@ -7,6 +7,7 @@ typedef struct {
     char steamid[35];
     char steamid_short[35];
     bool is_bot;
+    bool no_submit;
 } player_t;
 
 extern player_t g_players[33];

@@ -61,3 +61,4 @@ cvar_t* kz_api_bot_prefix = nullptr;
 cvar_t* kz_api_bot_team = nullptr;
 cvar_t* kz_api_bot_use_cmd = nullptr;
 cvar_t* kz_api_allow_pause = nullptr;
+cvar_t* kz_api_ban_action = nullptr;

@@ -71,13 +71,15 @@ void FN_AMXX_ATTACH()
     kz_api_log_parse  = register_cvar("kz_api_log_parse",  "1", FCVAR_EXTDLL | FCVAR_SPONLY);
     kz_api_log_mode   = register_cvar("kz_api_log_mode",   "1", FCVAR_EXTDLL | FCVAR_SPONLY);
 
-    kz_api_retries_max    = register_cvar("kz_api_retries_max",    "4", FCVAR_EXTDLL | FCVAR_SPONLY);
-    kz_api_retries_delay  = register_cvar("kz_api_retries_delay",  "5", FCVAR_EXTDLL | FCVAR_SPONLY);
-    kz_api_replays_clevel = register_cvar("kz_api_replays_clevel", "10", FCVAR_EXTDLL | FCVAR_SPONLY);
-    kz_api_replays_max    = register_cvar("kz_api_replays_max",    "-1", FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_retries_max      = register_cvar("kz_api_retries_max",      "4",  FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_retries_delay    = register_cvar("kz_api_retries_delay",    "5",  FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_replays_clevel   = register_cvar("kz_api_replays_clevel",   "10", FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_replays_max      = register_cvar("kz_api_replays_max",      "-1", FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_replays_parse    = register_cvar("kz_api_replays_parse",    "1",  FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_replays_download = register_cvar("kz_api_replays_download", "1",  FCVAR_EXTDLL | FCVAR_SPONLY);
 
     kz_api_bot_prefix  = register_cvar("kz_api_bot_prefix", "[SR]", FCVAR_EXTDLL | FCVAR_SPONLY);
-    kz_api_bot_team    = register_cvar("kz_api_bot_team", "1", FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_bot_team    = register_cvar("kz_api_bot_team",    "1", FCVAR_EXTDLL | FCVAR_SPONLY);
     kz_api_bot_use_cmd = register_cvar("kz_api_bot_use_cmd", "0", FCVAR_EXTDLL | FCVAR_SPONLY);
     kz_api_allow_pause = register_cvar("kz_api_allow_pause", "0", FCVAR_EXTDLL | FCVAR_SPONLY);
     kz_api_ban_action  = register_cvar("kz_api_ban_action",  "0", FCVAR_EXTDLL | FCVAR_SPONLY);

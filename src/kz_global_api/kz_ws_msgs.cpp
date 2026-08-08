@@ -319,6 +319,10 @@ void kz_ws_delete_record_replay(const char* mapname, const char* local_uid)
 
 bool kz_ws_try_fetch_replay(const char* mapname)
 {
+    if (kz_api_replays_download->value <= 0.0f)
+    {
+        return false;
+    }
     if (!mapname || !mapname[0] || !kz_ws_valid_replay_segment(mapname))
     {
         return false;

@@ -20,6 +20,8 @@ extern cvar_t* kz_api_retries_max;
 extern cvar_t* kz_api_retries_delay;
 extern cvar_t* kz_api_replays_clevel;
 extern cvar_t* kz_api_replays_max;
+extern cvar_t* kz_api_replays_parse;
+extern cvar_t* kz_api_replays_download;
 
 extern cvar_t* kz_api_bot_prefix;
 extern cvar_t* kz_api_bot_team;

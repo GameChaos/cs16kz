@@ -82,6 +82,15 @@ void FN_AMXX_ATTACH()
 
     REG_SVR_COMMAND("kz_api", kz_api_cmd);
     kz_api_add_natives();
+
+    // Export the run lifecycle to other modules (kz_base resolves these via MF_RequestFunction).
+    MF_RegisterFunction(reinterpret_cast<void*>(kz_rp_run_started),    "kz_rp_run_started");
+    MF_RegisterFunction(reinterpret_cast<void*>(kz_rp_run_checkpoint), "kz_rp_run_checkpoint");
+    MF_RegisterFunction(reinterpret_cast<void*>(kz_rp_run_gocheck),    "kz_rp_run_gocheck");
+    MF_RegisterFunction(reinterpret_cast<void*>(kz_rp_run_paused),     "kz_rp_run_paused");
+    MF_RegisterFunction(reinterpret_cast<void*>(kz_rp_run_unpaused),   "kz_rp_run_unpaused");
+    MF_RegisterFunction(reinterpret_cast<void*>(kz_rp_run_rejected),   "kz_rp_run_rejected");
+    MF_RegisterFunction(reinterpret_cast<void*>(kz_rp_run_finished),   "kz_rp_run_finished");
 }
 void FN_AMXX_PLUGINSLOADED()
 {

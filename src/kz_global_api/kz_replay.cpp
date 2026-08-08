@@ -46,11 +46,6 @@ static void kz_rp_upload_thread(void);
 
 int kz_rp_run_started(int id) 
 {
-    if (g_players[id].no_submit)
-    {
-        return 0;
-    }
-
     krp_packet item = {};
     item.player_index = id;
     item.type = KRP_SIGNAL_START;
@@ -165,13 +160,6 @@ int kz_rp_run_rejected(int id, bool delete_file)
 
 int kz_rp_run_finished(int id, float time)
 {
-    if (g_players[id].no_submit)
-    {
-        // forward to _rejected() to make sure the replay file gets closed if no_submit was updated mid-run
-        kz_rp_run_rejected(id, true);
-        return 0;
-    }
-
     krp_packet item = {};
     item.player_index = id;
     item.type = KRP_SIGNAL_FINISH;
@@ -870,27 +858,30 @@ static void kz_rp_writer_thread(void)
                             break;
                         }
 
-                        JSON_Value* data_val = json_value_init_object();
-                        JSON_Object* data_obj = json_value_get_object(data_val);
+                        if (!g_players[id].no_submit.load(std::memory_order_relaxed))
+                        {
+                            JSON_Value* data_val = json_value_init_object();
+                            JSON_Object* data_obj = json_value_get_object(data_val);
 
-                        char steamid[35];
-                        snprintf(steamid, sizeof(steamid), "STEAM_%c:%c:%s", sig->steamid_short[0], sig->steamid_short[1], sig->steamid_short + 2);
+                            char steamid[35];
+                            snprintf(steamid, sizeof(steamid), "STEAM_%c:%c:%s", sig->steamid_short[0], sig->steamid_short[1], sig->steamid_short + 2);
 
-                        json_object_set_string(data_obj, "steamid",     steamid);
-                        json_object_set_string(data_obj, "map_name",    mapname.c_str());
-                        json_object_set_number(data_obj, "time_ms",     (double)(int64_t)(sig->time * 1000.0f));
-                        json_object_set_number(data_obj, "checkpoints", s_checkpoints[id]);
-                        json_object_set_number(data_obj, "gochecks",    s_gochecks[id]);
-                        json_object_set_string(data_obj, "local_uid",   uid_str);
+                            json_object_set_string(data_obj, "steamid",     steamid);
+                            json_object_set_string(data_obj, "map_name",    mapname.c_str());
+                            json_object_set_number(data_obj, "time_ms",     (double)(int64_t)(sig->time * 1000.0f));
+                            json_object_set_number(data_obj, "checkpoints", s_checkpoints[id]);
+                            json_object_set_number(data_obj, "gochecks",    s_gochecks[id]);
+                            json_object_set_string(data_obj, "local_uid",   uid_str);
 
-                        std::string message;
-                        uint64_t msg_id = kz_storage_get_next_id(StorageTable::outgoing_queue);
-                        kz_ws_build_msg(WSMsgOut::ADD_RECORD, data_val, message, msg_id, &g_replay_writer_log);
+                            std::string message;
+                            uint64_t msg_id = kz_storage_get_next_id(StorageTable::outgoing_queue);
+                            kz_ws_build_msg(WSMsgOut::ADD_RECORD, data_val, message, msg_id, &g_replay_writer_log);
 
-                        auto shared_msg = std::make_shared<std::string>(std::move(message));
+                            auto shared_msg = std::make_shared<std::string>(std::move(message));
 
-                        kz_storage_save(shared_msg, WSMsgOut::ADD_RECORD, msg_id, StorageTable::outgoing_queue);
-                        kz_ws_send_msg(*shared_msg, msg_id);
+                            kz_storage_save(shared_msg, WSMsgOut::ADD_RECORD, msg_id, StorageTable::outgoing_queue);
+                            kz_ws_send_msg(*shared_msg, msg_id);
+                        }
                     }
                     else
                     {

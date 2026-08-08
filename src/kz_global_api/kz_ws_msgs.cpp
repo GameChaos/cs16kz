@@ -887,7 +887,7 @@ std::function<void()> kz_ws_ack_player_join(JSON_Object* obj)
 
         if (action == 3)
         {
-            g_players[indexOfEdict(pEntity)].no_submit = true;
+            g_players[indexOfEdict(pEntity)].no_submit.store(true, std::memory_order_relaxed);
             return;
         }
 

@@ -315,7 +315,6 @@ void FN_ClientPutInServer_Post(edict_t* pEntity)
 {
     int id = ENTINDEX(pEntity);
     g_players[id].is_bot = MF_IsPlayerBot(id);
-    g_players[id].no_submit = false;
 
     if (g_initialized && !g_players[id].is_bot)
     {
@@ -401,7 +400,13 @@ void KZ_SV_DropClient(edict_t* client)
         return;
     }
 
-    memset(&g_players[id], 0, sizeof(g_players[0]));
+    player_t& p        = g_players[id];
+    p.nickname[0]      = '\0';
+    p.ipaddr[0]        = '\0';
+    p.steamid[0]       = '\0';
+    p.steamid_short[0] = '\0';
+    p.is_bot           = false;
+    p.no_submit.store(false, std::memory_order_relaxed);
 }
 /***************************************************************************************************************/
 /***************************************************************************************************************/

@@ -420,6 +420,8 @@ pub fn build(b: *std.Build) !void
 		.dir = "src/kz_base",
 		.sources = &.{
                     "kz_api.cpp",
+                    "kz_cmd.cpp",
+                    "kz_base.cpp",
                     "kz_util.cpp",
                     "kz_mpbhop.cpp",
                     "main.cpp"

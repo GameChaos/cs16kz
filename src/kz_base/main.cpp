@@ -2,6 +2,7 @@
 
 #include "pdata.h"
 #include "kz_api.h"
+#include "kz_cmd.h"
 #include "kz_base.h"
 #include "kz_mpbhop.h"
 
@@ -13,15 +14,31 @@ int FN_AMXX_CHECKGAME(const char* game)
 {
     return (FStrEq(game, "cstrike") ? AMXX_GAME_OK : AMXX_GAME_BAD);
 }
-
 void FN_AMXX_ATTACH()
 {
     g_pEdicts = (*g_engfuncs.pfnPEntityOfEntIndex)(0);
-}
 
+    kz_register_client_command("checkpoint", kz_cmd_checkpoint, false);
+    kz_register_client_command("cp",         kz_cmd_checkpoint, false);
+
+    kz_register_client_command("gocheck",    kz_cmd_gocheck,    false);
+    kz_register_client_command("gc",         kz_cmd_gocheck,    false);
+
+    kz_register_client_command("teleport",   kz_cmd_gocheck,    false);
+    kz_register_client_command("tp",         kz_cmd_gocheck,    false);
+
+}
 void FN_AMXX_PLUGINSLOADED()
 {
     kz_api_init();
+}
+void FN_ClientCommand(edict_t* pEntity)
+{
+    if (kz_cmd_dispatch(pEntity))
+    {
+        RETURN_META(MRES_SUPERCEDE);
+    }
+    RETURN_META(MRES_IGNORED);
 }
 /***************************************************************************************************************/
 /***************************************************************************************************************/

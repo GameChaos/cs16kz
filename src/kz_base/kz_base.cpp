@@ -1,0 +1,120 @@
+#include "amxxmodule.h"
+
+#include "pdata.h"
+#include "kz_api.h"
+#include "kz_base.h"
+#include "kz_util.h"
+#include "kz_mpbhop.h"
+
+kz_player_t g_players[KZ_MAX_PLAYERS + 1];
+
+void kz_cmd_checkpoint(edict_t* pEntity)
+{
+    const int id = indexOfEdict(pEntity);
+    if (!is_player(id) || !MF_IsPlayerAlive(id))
+    {
+        return;
+    }
+    if (!is_on_ground(pEntity) && !is_on_ladder(pEntity))
+    {
+        // "Checkpoints mid-air are not allowed."
+        return;
+    }
+    if (kz_mpbhop_on_frozen_block(id))
+    {
+        // "Checkpoints on bhop blocks are not allowed."
+        return;
+    }
+
+    // TODO: fwd_checkpoint_pre
+
+    kz_player_t& p = g_players[id];
+    const Vector& origin = pEntity->v.origin;
+    const Vector& angles = pEntity->v.v_angle;
+
+    if (p.timer_paused)
+    {
+        p.paused_checkpoints[p.paused_cp_index].origin  = origin;
+        p.paused_checkpoints[p.paused_cp_index].v_angle = angles;
+
+        p.paused_cp_index = (p.paused_cp_index + 1) % KZ_MAX_CHECKPOINT_CACHE;
+        p.paused_cp_count++;
+    }
+    else
+    {
+        if (g_api_initialized)
+        {
+            kz_rp_run_checkpoint(id); // report to kz_global_api for the recording
+        }
+
+        p.checkpoints[p.cp_index].origin  = origin;
+        p.checkpoints[p.cp_index].v_angle = angles;
+
+        p.cp_index = (p.cp_index + 1) % KZ_MAX_CHECKPOINT_CACHE;
+        p.cp_count++;
+    }
+    // TODO: fwd_checkpoint_post
+    return;
+}
+void kz_cmd_gocheck(edict_t* pEntity)
+{
+    const int id = indexOfEdict(pEntity);
+    if (!is_player(id) || !MF_IsPlayerAlive(id))
+    {
+        return;
+    }
+
+    kz_player_t& p = g_players[id];
+    Vector origin(0.0f, 0.0f, 0.0f);
+    Vector angles(0.0f, 0.0f, 0.0f);
+
+    if (p.timer_paused)
+    {
+        int index = p.paused_cp_index - 1;
+        if (index < 0)
+        {
+            index = KZ_MAX_CHECKPOINT_CACHE - 1;
+        }
+        if (!is_vec_empty(p.paused_checkpoints[index].origin))
+        {
+            origin = p.paused_checkpoints[index].origin;
+            angles = p.paused_checkpoints[index].v_angle;
+        }
+    }
+    else
+    {
+        int index = p.cp_index - 1;
+        if (index < 0)
+        {
+            index = KZ_MAX_CHECKPOINT_CACHE - 1;
+        }
+        if (!p.cp_count)
+        {
+            // "You don't have any Checkpoints."
+        }
+        else
+        {
+            origin = p.checkpoints[index].origin;
+            angles = p.checkpoints[index].v_angle;
+        }
+    }
+    if (is_vec_empty(origin))
+    {
+        return;
+    }
+
+    // TODO: fwd_gocheck_pre
+    if (p.timer_running && !p.timer_paused && p.cp_count)
+    {
+        // TODO: impl. ungc ?
+        if (g_api_initialized)
+        {
+            kz_rp_run_gocheck(id); // report to kz_global_api for the recording
+        }
+    }
+    if (!p.timer_paused)
+    {
+        p.tp_count++;
+    }
+    kz_teleport_player(pEntity, origin, &angles);
+}

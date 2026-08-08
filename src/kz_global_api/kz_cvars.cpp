@@ -50,6 +50,7 @@ cvar_t* kz_api_log_send = nullptr;
 cvar_t* kz_api_log_recv = nullptr;
 cvar_t* kz_api_log_upload = nullptr;
 cvar_t* kz_api_log_parse = nullptr;
+cvar_t* kz_api_log_mode = nullptr;
 
 cvar_t* kz_api_retries_max = nullptr;
 cvar_t* kz_api_retries_delay = nullptr;

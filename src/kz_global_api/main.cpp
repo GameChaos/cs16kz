@@ -69,6 +69,7 @@ void FN_AMXX_ATTACH()
     kz_api_log_recv   = register_cvar("kz_api_log_recv",   "1", FCVAR_EXTDLL | FCVAR_SPONLY);
     kz_api_log_upload = register_cvar("kz_api_log_upload", "1", FCVAR_EXTDLL | FCVAR_SPONLY);
     kz_api_log_parse  = register_cvar("kz_api_log_parse",  "1", FCVAR_EXTDLL | FCVAR_SPONLY);
+    kz_api_log_mode   = register_cvar("kz_api_log_mode",   "1", FCVAR_EXTDLL | FCVAR_SPONLY);
 
     kz_api_retries_max    = register_cvar("kz_api_retries_max",    "4", FCVAR_EXTDLL | FCVAR_SPONLY);
     kz_api_retries_delay  = register_cvar("kz_api_retries_delay",  "5", FCVAR_EXTDLL | FCVAR_SPONLY);

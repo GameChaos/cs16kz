@@ -418,7 +418,11 @@ pub fn build(b: *std.Build) !void
 	const kz_base = try ctx.addModule(.{
 		.name = "kz_base",
 		.dir = "src/kz_base",
-		.sources = &.{"main.cpp"},
+		.sources = &.{
+                    "kz_util.cpp",
+                    "kz_mpbhop.cpp",
+                    "main.cpp"
+                }
 	});
 
 	var cdb_targets = std.ArrayListUnmanaged(*std.Build.Step.Compile){};

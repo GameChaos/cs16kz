@@ -409,8 +409,16 @@ edict_t* find_player_by_authid(const char* authid)
 }
 cvar_t* register_cvar(const char* name, const char* value, int flags)
 {
-    cvar_t reg_helper;
-    reg_helper.name     = const_cast<char*>(name); // makes the compiler fucking happy
+    // Metamod intercepts this call (meta_CVarRegister) and registers its own copy of the
+    // struct with the engine (name/string are strdup'd), so lifetime is not the issue --
+    // but it uses the ADDRESS of our variable (Plugins->find_memloc) to identify which
+    // plugin registered the cvar. "static" ensures the address lies inside this module's
+    // image so the lookup succeeds (stack addresses fail it; with optimized builds
+    // that ended in crashes).
+
+    static cvar_t reg_helper;
+
+    reg_helper.name     = const_cast<char*>(name);
     reg_helper.string   = const_cast<char*>(value);
     reg_helper.flags    = flags;
 

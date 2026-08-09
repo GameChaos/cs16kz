@@ -17,22 +17,34 @@
  *   - All fields are little-endian.
  *   - All on-disk structs are byte-packed (#pragma pack(1)); no padding.
  *   - char[] string fields are NUL-terminated and fixed-width (snprintf-style,
- *     truncated to fit).
+ *     truncated to fit). Readers should still treat them as untrusted and stop
+ *     at the field width.
  *   - krp_header.reserved[] is zero-filled on write; readers must ignore it.
+ *   - Because everything is pack(1), scalar members are frequently misaligned
+ *     (in krp_generic_ent the leading uint8_t pushes index and both krp_v3f
+ *     members off any 4-byte boundary). Load them BY VALUE -- memcpy or a
+ *     static_cast copy.
+ *     Binding a reference or a const T& parameter to a packed member traps
+ *     under UBSan's alignment check.
  *
  * Versioning
  *   - magic and version sit at fixed offsets 0 and 8 in every version.
  *   - Readers must validate magic == KRP_MAGIC and reject unknown versions.
- *   - version 1 uses a 256-byte header (this file). version 0 was a 189-byte
- *     header with no reserved block; it is not produced anymore and current
- *     readers reject it.
+ *   - version 2 (this file) adds krp_entvars.groundentity, growing krp_frame
+ *     from 112 to 163 bytes and krp_mask from 16 to 24 bytes.
+ *   - version 1 used a 112-byte krp_frame with no groundentity. Its records are
+ *     byte-incompatible with version 2 -- the frame size, the mask size and
+ *     therefore the whole columnar layout all differ, so a v1 body parsed as v2
+ *     yields garbage, not a partial read. Readers must reject on version alone.
+ *   - version 0 was a 189-byte header with no reserved block; it is not
+ *     produced anymore and current readers reject it.
  *
  * Physical representations
  *   .krpr  Raw capture, row-major. Header, then a flat sequence of records,
  *          each prefixed by a 1-byte frame type:
  *            EVENT    : 1 byte event id
- *            KEYFRAME : 16-byte all-0xFF mask + full 112-byte krp_frame
- *            DELTA    : 16-byte krp_mask + only the changed (XOR-diff) bytes
+ *            KEYFRAME : 24-byte all-0xFF mask + full 163-byte krp_frame
+ *            DELTA    : 24-byte krp_mask + only the changed (XOR-diff) bytes
  *          The four krp_header.size_* fields are 0 in this form.
  *
  *   .krpz  Final artifact, column-major + zstd-compressed. The DECOMPRESSED
@@ -82,7 +94,7 @@
 /* Bump whenever anything that changes on-disk interpretation changes: the
  * header struct, krp_frame / krp_usercmd / krp_entvars / krp_glbvars, the
  * delta/mask scheme, or the columnar section order. */
-#define KRP_CURRENT_VERSION  1
+#define KRP_CURRENT_VERSION  2
 
 /* File extensions. */
 #define KRP_EXT_RAW          ".krpr"   /* row-major, uncompressed          */
@@ -114,14 +126,14 @@ typedef struct
     float z;
 } krp_v3f;
 
-/* Delta bitmask: one bit per byte of krp_frame. */
+/* Delta bitmask: one bit per byte of krp_frame. 3 blocks = 192 bits, enough to
+ * cover the 163-byte krp_frame; bits past sizeof(krp_frame) are never set. */
 typedef struct
 {
-    uint64_t m1;
-    uint64_t m2;
+    uint64_t m[3];
 } krp_mask;
 
-#define KRP_MASK_BLOCKS  (sizeof(krp_mask) / sizeof(uint64_t))  /* = 2 */
+#define KRP_MASK_BLOCKS  (sizeof(krp_mask) / sizeof(uint64_t))  /* = 3 */
 
 /* Player input for one tick (48 bytes). */
 typedef struct
@@ -142,7 +154,18 @@ typedef struct
     krp_v3f  impact_position;
 } krp_usercmd;
 
-/* Entity state for one tick (60 bytes). */
+/* Snapshot of a referenced entity, e.g. krp_entvars::groundentity (51 bytes). */
+typedef struct
+{
+    uint8_t is_set;  // 0 = no entity
+    uint16_t index;  // edict index: 0 world, 1..maxclients players, else map entity
+
+    char classname[24];
+    krp_v3f origin;
+    krp_v3f velocity;
+} krp_generic_ent;
+
+/* Entity state for one tick (111 bytes). */
 typedef struct
 {
     krp_v3f origin;
@@ -154,6 +177,8 @@ typedef struct
     int32_t button;
     int32_t oldbuttons;
     float   fuser2;
+
+    krp_generic_ent groundentity;
 } krp_entvars;
 
 /* Global state for one tick (4 bytes). */
@@ -162,12 +187,12 @@ typedef struct
     float frametime;
 } krp_glbvars;
 
-/* One captured tick (112 bytes). Unit of delta-encoding. */
+/* One captured tick (163 bytes). Unit of delta-encoding. */
 typedef struct
 {
-    krp_usercmd cmd;   /* 48 */
-    krp_entvars vars;  /* 60 */
-    krp_glbvars glb;   /*  4 */
+    krp_usercmd cmd;   /*  48 */
+    krp_entvars vars;  /* 111 */
+    krp_glbvars glb;   /*   4 */
 } krp_frame;
 
 /* Fixed 256-byte file header (189 bytes of fields + 67 reserved). Present at
@@ -203,13 +228,14 @@ typedef struct
 #pragma pack(pop)
 
 /* ---- size contract (the machine-checkable part of the spec) -------------- */
-KRP_STATIC_ASSERT(sizeof(krp_v3f)     == 12,  "krp_v3f must be 12 bytes");
-KRP_STATIC_ASSERT(sizeof(krp_mask)    == 16,  "krp_mask must be 16 bytes");
-KRP_STATIC_ASSERT(sizeof(krp_usercmd) == 48,  "krp_usercmd must be 48 bytes");
-KRP_STATIC_ASSERT(sizeof(krp_entvars) == 60,  "krp_entvars must be 60 bytes");
-KRP_STATIC_ASSERT(sizeof(krp_glbvars) == 4,   "krp_glbvars must be 4 bytes");
-KRP_STATIC_ASSERT(sizeof(krp_frame)   == 112, "krp_frame must be 112 bytes");
-KRP_STATIC_ASSERT(sizeof(krp_header)  == 256, "krp_header must be 256 bytes");
+KRP_STATIC_ASSERT(sizeof(krp_v3f)        == 12,  "krp_v3f must be 12 bytes");
+KRP_STATIC_ASSERT(sizeof(krp_mask)       == 24,  "krp_mask must be 24 bytes");
+KRP_STATIC_ASSERT(sizeof(krp_usercmd)    == 48,  "krp_usercmd must be 48 bytes");
+KRP_STATIC_ASSERT(sizeof(krp_generic_ent) == 51, "krp_generic_ent must be 51 bytes");
+KRP_STATIC_ASSERT(sizeof(krp_entvars)    == 111, "krp_entvars must be 111 bytes");
+KRP_STATIC_ASSERT(sizeof(krp_glbvars)    == 4,   "krp_glbvars must be 4 bytes");
+KRP_STATIC_ASSERT(sizeof(krp_frame)      == 163, "krp_frame must be 163 bytes");
+KRP_STATIC_ASSERT(sizeof(krp_header)     == 256, "krp_header must be 256 bytes");
 
 /* The delta mask must have at least one bit per byte of krp_frame. */
 KRP_STATIC_ASSERT(sizeof(krp_mask) * 8 >= sizeof(krp_frame),

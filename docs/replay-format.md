@@ -22,7 +22,7 @@ Both `.krpr` and `.krpz` begin with a fixed **256-byte** header (189 bytes of fi
 | Offset | Field | Type | Size | Notes |
 |-------:|-------|------|-----:|-------|
 | 0 | `magic` | `uint64` | 8 | `0x4B52502146494C45` = ASCII `"KRP!FILE"` |
-| 8 | `version` | `uint64` | 8 | `KRP_CURRENT_VERSION`, currently `1` |
+| 8 | `version` | `uint64` | 8 | `KRP_CURRENT_VERSION`, currently `2` |
 | 16 | `player.name` | `char[32]` | 32 | Nickname (patched on finish) |
 | 48 | `player.steamid` | `char[35]` | 35 | `STEAM_X:Y:Z` |
 | 83 | `map.name` | `char[64]` | 64 | Map name |
@@ -40,13 +40,13 @@ Both `.krpr` and `.krpz` begin with a fixed **256-byte** header (189 bytes of fi
 
 The four `size_*` fields are `0` in a raw `.krpr`; they are filled in during reorganization and describe the section lengths of the columnar `.krpz` body.
 
-**Versioning.** `magic` and `version` sit at fixed offsets 0 and 8 in every version. On read, the parser validates `magic` and dispatches on `version`; unknown versions are rejected. Version `1` is the current 256-byte layout. Version `0` was an older 189-byte header with **no** `reserved` block — it is no longer produced and the current parser rejects it (older replays are re-captured, not migrated). The `reserved` block exists so future additive fields can be carved out of it without shifting existing offsets or changing the header size.
+**Versioning.** `magic` and `version` sit at fixed offsets 0 and 8 in every version. On read, the parser validates `magic` and `version`.
 
 ---
 
 ## 2. Frame payload (`krp_frame`)
 
-Each captured tick is a **112-byte** `krp_frame`, composed of three sub-structs. This is the unit that delta-encoding operates on, byte by byte.
+Each captured tick is a **163-byte** `krp_frame`, composed of three sub-structs. This is the unit that delta-encoding operates on, byte by byte.
 
 ### 2.1 `krp_usercmd` (48 bytes) — player input
 
@@ -65,7 +65,7 @@ Each captured tick is a **112-byte** `krp_frame`, composed of three sub-structs.
 | `impact_index` | `int32` | 4 |
 | `impact_position` | `v3f` | 12 |
 
-### 2.2 `krp_entvars` (60 bytes) — entity state
+### 2.2 `krp_entvars` (111 bytes) — entity state
 
 | Field | Type | Size |
 |-------|------|-----:|
@@ -78,8 +78,19 @@ Each captured tick is a **112-byte** `krp_frame`, composed of three sub-structs.
 | `button` | `int32` | 4 |
 | `oldbuttons` | `int32` | 4 |
 | `fuser2` | `float` | 4 |
+| `groundentity` | `krp_generic_ent` | 51 |
 
-### 2.3 `krp_glbvars` (4 bytes) — globals
+### 2.3 `krp_generic_ent` (51 bytes) — referenced entity
+
+| Field | Type | Size | Notes |
+|-------|------|-----:|-------|
+| `is_set` | `uint8` | 1 | `0` = no entity |
+| `index` | `uint16` | 2 | Edict index: `0` world, `1..maxclients` players, else map entity |
+| `classname` | `char[24]` | 24 | |
+| `origin` | `v3f` | 12 | |
+| `velocity` | `v3f` | 12 | |
+
+### 2.4 `krp_glbvars` (4 bytes) — globals
 
 | Field | Type | Size |
 |-------|------|-----:|
@@ -102,8 +113,8 @@ After the header, a `.krpr` is a flat sequence of records. Each record starts wi
 Record bodies by type:
 
 - **EVENT** — 1 byte: the event id (`0` = checkpoint, `1` = gocheck).
-- **KEYFRAME** — a 16-byte all-`0xFF` mask, followed by the complete 112-byte `krp_frame` (`cmd`, then `vars`, then `glb`). The first frame of every run is always a keyframe.
-- **DELTA** — a 16-byte `krp_mask` bitmask followed by only the changed bytes (see §4).
+- **KEYFRAME** — a 24-byte all-`0xFF` mask, followed by the complete 163-byte `krp_frame` (`cmd`, then `vars`, then `glb`). The first frame of every run is always a keyframe.
+- **DELTA** — a 24-byte `krp_mask` bitmask followed by only the changed bytes (see §4).
 
 The first frame after a run start or an unpause is written as a **keyframe**; all other ticks are **deltas**.
 
@@ -127,7 +138,7 @@ Putting the class flag first and the zero-padded time second makes a plain lexic
 
 ## 4. Delta encoding
 
-Deltas operate on the raw bytes of `krp_frame`, not on fields. The mask is a `krp_mask` (two `uint64`, **16 bytes = 128 bits**); `krp_frame` is 112 bytes, so one mask bit maps to each byte with room to spare:
+Deltas operate on the raw bytes of `krp_frame`, not on fields. The mask is a `krp_mask` (three `uint64`, **24 bytes = 192 bits**); `krp_frame` is 163 bytes, so one mask bit maps to each byte with room to spare:
 
 ```
 static_assert(sizeof(krp_mask) * 8 >= sizeof(krp_frame));
@@ -150,7 +161,7 @@ Before upload, `krp::compress` (krp_format.cpp) transposes the row-major `.krpr`
 Section lengths come from the header's `size_types`, `size_flags`, `size_data`, and `size_events`.
 
 - **frame-types** — one byte per record, in order (`size_types` bytes total; also equals the frame count including events).
-- **mask/flags** — the per-frame masks, split into `num_blocks = sizeof(krp_mask)/8 = 2` blocks. For each block, all frames' 8 mask-bytes for that block are stored contiguously (block 0 stream, then block 1 stream). Only DELTA/KEYFRAME rows contribute mask bytes.
+- **mask/flags** — the per-frame masks, split into `num_blocks = sizeof(krp_mask)/8 = 3` blocks. For each block, all frames' 8 mask-bytes for that block are stored contiguously (block 0 stream, then block 1, then block 2). Only DELTA/KEYFRAME rows contribute mask bytes.
 - **column data** — the diff/keyframe bytes grouped **by byte position** within `krp_frame` (column 0 for all frames, then column 1, …). Empty columns (a byte that never changed across the whole run) occupy zero space.
 - **events** — the event ids, concatenated. Present in the layout but **ignored by playback**.
 
@@ -165,8 +176,8 @@ Compression runs on the upload thread; if a queued file is already `.krpz` it is
 `parse_playback` (in `kz_replay_pb.cpp`, via `krp::map_sections` + `krp::for_each_record`) reconstructs frames from a `.krpz`:
 
 1. `ZSTD_getFrameContentSize` + `ZSTD_decompress` to recover the columnar body.
-2. Read the header, validate `magic`, and dispatch on `version` (only `1` is accepted; anything else is rejected). Slice the four sections using `size_types` / `size_flags` / `size_data`, with the body starting right after the 256-byte header.
-3. Walk the frame-types stream. The first type **must** be `KEYFRAME` or parsing aborts. For each DELTA/KEYFRAME row, read that row's two mask blocks, and for every set bit consume one byte from the matching column stream — copying it for keyframes, XOR-applying it for deltas — to rebuild the full `krp_frame`.
+2. Read the header, validate `magic`, and dispatch on `version` (only `2` is accepted; anything else is rejected). Slice the four sections using `size_types` / `size_flags` / `size_data`, with the body starting right after the 256-byte header.
+3. Walk the frame-types stream. The first type **must** be `KEYFRAME` or parsing aborts. For each DELTA/KEYFRAME row, read that row's three mask blocks, and for every set bit consume one byte from the matching column stream — copying it for keyframes, XOR-applying it for deltas — to rebuild the full `krp_frame`.
 4. EVENT rows are skipped (events are not needed for playback).
 
 The parser keeps only a reduced per-frame struct for the SR bot, `krp_playback_frame`: `origin` (`v3f`), `v_angle` (`v3f`), `flags`, `button`, `oldbuttons`. Everything else in `krp_frame` is decoded but discarded. The bot interpolates position between consecutive frames, derives velocity, and picks animation gaitsequences from the flags/buttons.
@@ -177,10 +188,10 @@ The run time and the `MM:SS.cc` timer string are parsed from the **filename** �
 
 ## 7. Quick reference
 
-- Magic: `0x4B52502146494C45` (`"KRP!FILE"`), current version `1`.
+- Magic: `0x4B52502146494C45` (`"KRP!FILE"`), current version `2`.
 - Header: 256 bytes (189 fields + 67 reserved), packed, little-endian; body begins at `0x100`.
-- Frame: 112 bytes = `usercmd` (48) + `entvars` (60) + `glbvars` (4).
-- Delta mask: `krp_mask` = 2×`uint64` (16 bytes / 128 bits), one bit per frame byte, XOR diffs.
+- Frame: 163 bytes = `usercmd` (48) + `entvars` (111) + `glbvars` (4).
+- Delta mask: `krp_mask` = 3×`uint64` (24 bytes / 192 bits), one bit per frame byte, XOR diffs.
 - Frame types: `0` EVENT, `1` DELTA, `2` KEYFRAME. First frame is always a keyframe.
 - Events: `0` checkpoint, `1` gocheck.
 - `.krpr` = raw row-major, uncompressed. `.krpz` = columnar `[header][types][flags][data][events]`, zstd-compressed.

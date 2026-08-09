@@ -335,6 +335,28 @@ void kz_rp_set_vars(int id, const entvars_t* vars)
     frame->vars.flags         = vars->flags;
     frame->vars.button        = vars->button;
     frame->vars.oldbuttons    = vars->oldbuttons;
+
+    if (!FNullEnt(vars->groundentity))
+    {
+        edict_t* pEnt = vars->groundentity;
+
+        frame->vars.groundentity.is_set = 1;
+        frame->vars.groundentity.index  = static_cast<uint16_t>(indexOfEdict(pEnt));
+
+        frame->vars.groundentity.origin.x = pEnt->v.origin.x;
+        frame->vars.groundentity.origin.y = pEnt->v.origin.y;
+        frame->vars.groundentity.origin.z = pEnt->v.origin.z;
+
+        frame->vars.groundentity.velocity.x = pEnt->v.velocity.x;
+        frame->vars.groundentity.velocity.y = pEnt->v.velocity.y;
+        frame->vars.groundentity.velocity.z = pEnt->v.velocity.z;
+
+        snprintf(frame->vars.groundentity.classname, sizeof(frame->vars.groundentity.classname), "%s", STRING(pEnt->v.classname));
+    }
+    else
+    {
+        memset(&(frame->vars.groundentity), 0, sizeof(frame->vars.groundentity));
+    }
 }
 void kz_rp_write_frame(int id)
 {
